@@ -5,7 +5,21 @@ import redis.asyncio as aioredis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:password@localhost:5432/prop_trading")
+# Получаем DATABASE_URL и конвертируем в asyncpg формат
+_raw_db_url = os.getenv(
+    "DATABASE_URL",
+    "postgresql+asyncpg://postgres:password@localhost:5432/prop_trading"
+)
+
+# Railway и многие хостинги дают postgres:// или postgresql://
+# SQLAlchemy async требует postgresql+asyncpg://
+def _fix_db_url(url: str) -> str:
+    url = url.replace("postgres://", "postgresql+asyncpg://")
+    if url.startswith("postgresql://") and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://")
+    return url
+
+DATABASE_URL = _fix_db_url(_raw_db_url)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 engine = create_async_engine(
