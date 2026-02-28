@@ -98,6 +98,7 @@ export const challengesApi = {
   list: () => get<ChallengeType[]>('/challenges'),
   my: (status?: string) => get<UserChallenge[]>('/challenges/my', { status }),
   getById: (id: number) => get<UserChallenge>(`/challenges/${id}`),
+  getDetail: (id: number) => get<UserChallenge>(`/challenges/${id}`),
   getRules: (id: number) => get<ChallengeRules>(`/challenges/${id}/rules`),
   getViolations: (id: number) => get<Violation[]>(`/challenges/${id}/violations`),
   purchase: (challengeTypeId: number) =>
@@ -117,9 +118,13 @@ export const tradingApi = {
     del<object>(`/trading/order/${orderId}`, { challenge_id: challengeId, symbol }),
   closeAllPositions: (challengeId: number) =>
     del<object[]>('/trading/positions/all', { challenge_id: challengeId }),
-  getHistory: (challengeId: number, cursor?: string, limit = 50, symbol?: string) =>
-    get<PaginatedResponse<TradeHistory>>('/trading/history', {
-      challenge_id: challengeId, cursor, limit, symbol,
+  getHistory: (challengeId: number, params?: { cursor?: number; limit?: number; side?: string; symbol?: string }) =>
+    get<TradeHistoryPage>('/trading/history', {
+      challenge_id: challengeId,
+      cursor: params?.cursor,
+      limit: params?.limit ?? 50,
+      side: params?.side,
+      symbol: params?.symbol,
     }),
   getPairs: () => get<TradingPair[]>('/trading/pairs'),
   getKline: (symbol: string, interval: string, limit = 200) =>
@@ -139,6 +144,7 @@ export const statsApi = {
 // ── Payouts ──────────────────────────────────────────────────────────────────
 export const payoutsApi = {
   list: (challengeId?: number) => get<Payout[]>('/payouts', challengeId ? { challenge_id: challengeId } : undefined),
+  getList: (challengeId: number) => get<Payout[]>('/payouts', { challenge_id: challengeId }),
   getAvailable: (challengeId: number) =>
     get<AvailablePayout>('/payouts/available', { challenge_id: challengeId }),
   request: (data: PayoutRequest) => post<Payout>('/payouts/request', data),
@@ -147,18 +153,23 @@ export const payoutsApi = {
 // ── Achievements ──────────────────────────────────────────────────────────────
 export const achievementsApi = {
   all: () => get<Achievement[]>('/achievements'),
+  getAll: () => get<Achievement[]>('/achievements'),
   unlocked: () => get<Achievement[]>('/achievements/unlocked'),
+  getUnlocked: () => get<Achievement[]>('/achievements/unlocked'),
 }
 
 // ── Leaderboard ───────────────────────────────────────────────────────────────
 export const leaderboardApi = {
   monthly: (limit = 100) => get<LeaderboardEntry[]>('/leaderboard/monthly', { limit }),
+  getMonthly: (limit = 100) => get<LeaderboardEntry[]>('/leaderboard/monthly', { limit }),
   alltime: (limit = 100) => get<LeaderboardEntry[]>('/leaderboard/alltime', { limit }),
+  getAlltime: (limit = 100) => get<LeaderboardEntry[]>('/leaderboard/alltime', { limit }),
 }
 
 // ── Referral ──────────────────────────────────────────────────────────────────
 export const referralApi = {
   info: () => get<ReferralInfo>('/referral/info'),
+  getInfo: () => get<ReferralInfo>('/referral/info'),
   earnings: () => get<ReferralEarning[]>('/referral/earnings'),
 }
 
@@ -187,6 +198,7 @@ export interface ChallengeType {
 export interface UserChallenge {
   id: number
   challenge_type_id: number
+  challenge_type?: ChallengeType
   status: 'phase1' | 'phase2' | 'funded' | 'failed' | 'completed'
   phase: number | null
   account_mode: 'demo' | 'funded'
@@ -195,6 +207,7 @@ export interface UserChallenge {
   daily_pnl: number
   total_pnl: number
   trading_days_count: number
+  scaling_step?: number
   started_at?: string
   funded_at?: string
   failed_at?: string
@@ -203,21 +216,34 @@ export interface UserChallenge {
 
 export interface ChallengeRules {
   challenge_id: number
+  challenge_type_name?: string
+  phase?: string
   status: string
   profit_target_pct: number
   profit_target_amount: number
+  daily_loss_limit_pct?: number
+  daily_loss_used_pct?: number
+  total_loss_limit_pct?: number
+  total_loss_used_pct?: number
   max_daily_loss_pct: number
   max_total_loss_pct: number
   min_trading_days: number
   drawdown_type: string
   current_pnl: number
   current_pnl_pct: number
+  current_profit_pct?: number
   daily_pnl: number
   trading_days_count: number
   max_loss_today: number
   profit_progress_pct: number
   daily_drawdown_used_pct: number
   total_drawdown_used_pct: number
+  initial_balance?: number
+  news_trading_ban?: boolean
+  overnight_positions_allowed?: boolean
+  weekend_positions_allowed?: boolean
+  consistency_rule?: boolean
+  days_remaining?: number
 }
 
 export interface Violation {
@@ -273,18 +299,28 @@ export interface PlaceOrderRequest {
 }
 
 export interface TradeHistory {
-  id: number
+  trade_id?: string
+  id?: number
   symbol: string
-  direction: string
-  entry_price: number
+  side: string
+  direction?: string
+  qty: number
+  quantity?: number
+  entry_price?: number
   exit_price?: number
-  quantity: number
-  leverage: number
-  pnl?: number
+  pnl: number
   pnl_pct?: number
-  opened_at: string
+  created_at: string
   closed_at?: string
+  opened_at?: string
+  leverage?: number
   duration_seconds?: number
+}
+
+export interface TradeHistoryPage {
+  trades: TradeHistory[]
+  next_cursor?: number
+  has_more: boolean
 }
 
 export interface TradingPair {
@@ -349,15 +385,17 @@ export interface Performance {
 }
 
 export interface Payout {
-  id: number
+  payout_id?: string
+  id?: number
   challenge_id: number
   amount: number
-  fee: number
-  net_amount: number
+  fee?: number
+  net_amount?: number
   wallet_address: string
   network: string
   status: string
-  requested_at: string
+  created_at: string
+  requested_at?: string
   processed_at?: string
   tx_hash?: string
 }
@@ -376,6 +414,7 @@ export interface AvailablePayout {
   min_payout: number
   can_request: boolean
   pending_payout: boolean
+  total_paid?: number
 }
 
 export interface Achievement {
