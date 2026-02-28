@@ -387,3 +387,227 @@ async def get_overview(
         challenges_passed_total=passed,
         challenges_failed_total=failed,
     ))
+
+
+# ─── Дополнительные эндпоинты для фронтенд-панели ─────────────────────────────
+
+class OverviewExtOut(BaseModel):
+    total_users: int
+    active_users_today: int
+    total_challenges: int
+    active_challenges: int
+    funded_accounts: int
+    total_pnl_all: float
+    pending_payouts: int
+    pending_payout_amount: float
+    master_balance: float
+
+
+@router.get("/overview", response_model=APIResponse[OverviewExtOut])
+async def get_overview_ext(
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[OverviewExtOut]:
+    """Расширенная статистика для фронтенд-панели."""
+    from datetime import datetime, timezone, timedelta
+
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    total_users = (await session.execute(select(func.count(User.id)))).scalar() or 0
+
+    # Active today (updated_at within last 24h)
+    active_today = (await session.execute(
+        select(func.count(User.id)).where(User.updated_at >= today_start)
+    )).scalar() or 0
+
+    total_challenges = (await session.execute(select(func.count(UserChallenge.id)))).scalar() or 0
+
+    active_chal = (await session.execute(
+        select(func.count(UserChallenge.id)).where(
+            UserChallenge.status.in_([ChallengeStatus.phase1, ChallengeStatus.phase2, ChallengeStatus.funded])
+        )
+    )).scalar() or 0
+
+    funded = (await session.execute(
+        select(func.count(UserChallenge.id)).where(UserChallenge.status == ChallengeStatus.funded)
+    )).scalar() or 0
+
+    total_pnl = (await session.execute(
+        select(func.sum(UserChallenge.total_pnl))
+    )).scalar() or 0
+
+    pending_count = (await session.execute(
+        select(func.count(Payout.id)).where(Payout.status == PayoutStatus.pending)
+    )).scalar() or 0
+
+    pending_amt = (await session.execute(
+        select(func.sum(Payout.amount)).where(Payout.status == PayoutStatus.pending)
+    )).scalar() or 0
+
+    return APIResponse(data=OverviewExtOut(
+        total_users=total_users,
+        active_users_today=active_today,
+        total_challenges=total_challenges,
+        active_challenges=active_chal,
+        funded_accounts=funded,
+        total_pnl_all=float(total_pnl),
+        pending_payouts=pending_count,
+        pending_payout_amount=float(pending_amt),
+        master_balance=0.0,  # fetched separately in master balance check task
+    ))
+
+
+class UsersPageOut(BaseModel):
+    users: list[UserAdminOut]
+    total: int
+
+
+@router.get("/users", response_model=APIResponse[UsersPageOut])
+async def list_users_paged(
+    search: Optional[str] = Query(None),
+    role: Optional[str] = Query(None),
+    is_blocked: Optional[bool] = Query(None),
+    limit: int = Query(20, le=200),
+    offset: int = Query(0),
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[UsersPageOut]:
+    """Список пользователей с постраничной навигацией."""
+    stmt = select(User)
+    if search:
+        stmt = stmt.where(
+            User.username.ilike(f"%{search}%") | User.first_name.ilike(f"%{search}%")
+        )
+    if role:
+        stmt = stmt.where(User.role == role)
+    if is_blocked is not None:
+        stmt = stmt.where(User.is_blocked == is_blocked)
+
+    count_q = await session.execute(select(func.count()).select_from(stmt.subquery()))
+    total = count_q.scalar_one() or 0
+
+    stmt = stmt.order_by(User.created_at.desc()).offset(offset).limit(limit)
+    result = await session.execute(stmt)
+    users = result.scalars().all()
+
+    result_list = []
+    for u in users:
+        ac = (await session.execute(
+            select(func.count(UserChallenge.id)).where(
+                UserChallenge.user_id == u.id,
+                UserChallenge.status.in_([ChallengeStatus.phase1, ChallengeStatus.phase2, ChallengeStatus.funded]),
+            )
+        )).scalar() or 0
+        result_list.append(UserAdminOut(
+            id=u.id, telegram_id=u.telegram_id, username=u.username,
+            first_name=u.first_name, role=u.role, referral_code=u.referral_code,
+            streak_days=u.streak_days, is_blocked=u.is_blocked,
+            created_at=u.created_at, active_challenges=ac,
+        ))
+
+    return APIResponse(data=UsersPageOut(users=result_list, total=total))
+
+
+@router.post("/users/{user_id}/block", response_model=APIResponse[dict])
+async def block_user_by_id(
+    user_id: int,
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[dict]:
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.role == UserRole.super_admin:
+        raise HTTPException(status_code=403, detail="Cannot block super_admin")
+    user.is_blocked = True
+    await session.commit()
+    return APIResponse(data={"user_id": user_id, "is_blocked": True})
+
+
+@router.post("/users/{user_id}/unblock", response_model=APIResponse[dict])
+async def unblock_user_by_id(
+    user_id: int,
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[dict]:
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.is_blocked = False
+    await session.commit()
+    return APIResponse(data={"user_id": user_id, "is_blocked": False})
+
+
+class ChallengesPageOut(BaseModel):
+    challenges: list[ChallengeAdminOut]
+    total: int
+
+
+@router.get("/challenges", response_model=APIResponse[ChallengesPageOut])
+async def list_challenges_paged(
+    status: Optional[str] = Query(None),
+    limit: int = Query(20, le=200),
+    offset: int = Query(0),
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[ChallengesPageOut]:
+    """Испытания с постраничной навигацией."""
+    stmt = (
+        select(UserChallenge, User, ChallengeType)
+        .join(User, UserChallenge.user_id == User.id)
+        .join(ChallengeType, UserChallenge.challenge_type_id == ChallengeType.id)
+    )
+    if status:
+        stmt = stmt.where(UserChallenge.status == status)
+
+    count_q = await session.execute(select(func.count()).select_from(stmt.subquery()))
+    total = count_q.scalar_one() or 0
+
+    stmt = stmt.order_by(UserChallenge.created_at.desc()).offset(offset).limit(limit)
+    result = await session.execute(stmt)
+
+    challenges = [
+        ChallengeAdminOut(
+            id=ch.id, user_id=ch.user_id, username=u.username,
+            challenge_type_name=ct.name, account_size=float(ct.account_size),
+            status=ch.status, phase=ch.phase, account_mode=ch.account_mode,
+            total_pnl=float(ch.total_pnl), daily_pnl=float(ch.daily_pnl),
+            trading_days_count=ch.trading_days_count, started_at=ch.started_at,
+            failed_reason=ch.failed_reason,
+        )
+        for ch, u, ct in result.all()
+    ]
+    return APIResponse(data=ChallengesPageOut(challenges=challenges, total=total))
+
+
+@router.get("/payouts", response_model=APIResponse[list[PayoutAdminOut]])
+async def list_payouts(
+    status: Optional[str] = Query(None),
+    limit: int = Query(50, le=200),
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[list[PayoutAdminOut]]:
+    """Выплаты с фильтром по статусу."""
+    stmt = (
+        select(Payout, User)
+        .join(User, Payout.user_id == User.id)
+        .order_by(Payout.requested_at.desc())
+        .limit(limit)
+    )
+    if status:
+        stmt = stmt.where(Payout.status == status)
+
+    result = await session.execute(stmt)
+    return APIResponse(data=[
+        PayoutAdminOut(
+            id=p.id, user_id=p.user_id, username=u.username,
+            challenge_id=p.challenge_id, amount=float(p.amount),
+            net_amount=float(p.net_amount or p.amount), wallet_address=p.wallet_address,
+            network=p.network, status=p.status, requested_at=p.requested_at,
+            processed_at=p.processed_at, reject_reason=getattr(p, 'reject_reason', None),
+        )
+        for p, u in result.all()
+    ])

@@ -21,6 +21,7 @@ import { ProfilePage } from '@/pages/ProfilePage'
 import { RulesPage } from '@/pages/RulesPage'
 import { PayoutsPage } from '@/pages/PayoutsPage'
 import { ScalingPage } from '@/pages/ScalingPage'
+import { AdminPage } from '@/pages/AdminPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -69,6 +70,7 @@ function AppLayout() {
           <Route path="/rules" element={<RulesPage />} />
           <Route path="/payouts" element={<PayoutsPage />} />
           <Route path="/scaling" element={<ScalingPage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </PageTransition>
