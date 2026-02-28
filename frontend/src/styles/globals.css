@@ -1,0 +1,181 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── CSS Variables (Telegram-adaptive) ─────────────────────────────────── */
+:root {
+  --bg-primary: #0A0A0F;
+  --bg-secondary: #12121A;
+  --bg-card: #16161F;
+  --bg-border: #1E1E2E;
+
+  --brand-primary: #6C63FF;
+  --brand-secondary: #00D4AA;
+  --brand-glow: rgba(108, 99, 255, 0.4);
+
+  --profit: #00D4AA;
+  --loss: #FF4757;
+  --warning: #FFA502;
+
+  --text-primary: #FFFFFF;
+  --text-secondary: #8B8B9A;
+  --text-muted: #4A4A5A;
+
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+}
+
+/* Override with Telegram theme if available */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tg-bg: var(--bg-primary);
+  }
+}
+
+/* ── Base Styles ─────────────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--safe-area-top);
+  padding-bottom: var(--safe-area-bottom);
+  padding-left: var(--safe-area-left);
+  padding-right: var(--safe-area-right);
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-border);
+  border-radius: 2px;
+}
+
+/* ── Glass Card ──────────────────────────────────────────────────────────── */
+.glass-card {
+  background: rgba(22, 22, 31, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+}
+
+/* ── Profit / Loss Colors ───────────────────────────────────────────────── */
+.text-profit { color: var(--profit); }
+.text-loss { color: var(--loss); }
+.text-warning { color: var(--warning); }
+.bg-profit { background-color: var(--profit); }
+.bg-loss { background-color: var(--loss); }
+
+/* ── Numbers — always monospace ─────────────────────────────────────────── */
+.num {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Glow Effects ────────────────────────────────────────────────────────── */
+.glow-primary {
+  box-shadow: 0 0 20px rgba(108, 99, 255, 0.3);
+}
+.glow-profit {
+  box-shadow: 0 0 20px rgba(0, 212, 170, 0.3);
+}
+.glow-loss {
+  box-shadow: 0 0 20px rgba(255, 71, 87, 0.3);
+}
+
+/* ── Bottom Tab Bar ──────────────────────────────────────────────────────── */
+.tab-bar {
+  padding-bottom: calc(var(--safe-area-bottom) + 8px);
+}
+
+/* ── Disable selection ──────────────────────────────────────────────────── */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ── Reduce Motion ───────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Noise Texture Overlay ───────────────────────────────────────────────── */
+.noise-overlay::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url('/assets/misc/noise.png');
+  opacity: 0.03;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+/* ── Ambient Orbs ────────────────────────────────────────────────────────── */
+.ambient-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+}
+.ambient-bg::before {
+  content: '';
+  position: absolute;
+  top: -20%;
+  left: -10%;
+  width: 60%;
+  height: 60%;
+  background: radial-gradient(circle, rgba(108, 99, 255, 0.08) 0%, transparent 70%);
+  animation: float1 8s ease-in-out infinite;
+}
+.ambient-bg::after {
+  content: '';
+  position: absolute;
+  bottom: -20%;
+  right: -10%;
+  width: 50%;
+  height: 50%;
+  background: radial-gradient(circle, rgba(0, 212, 170, 0.06) 0%, transparent 70%);
+  animation: float2 10s ease-in-out infinite;
+}
+@keyframes float1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(5%, 5%) scale(1.1); }
+}
+@keyframes float2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-5%, -5%) scale(1.1); }
+}

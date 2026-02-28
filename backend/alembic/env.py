@@ -1,15 +1,24 @@
 import asyncio
 import os
+import sys
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
-from sqlalchemy import pool, text
+from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-# Импортируем Base и все модели
-from database import Base
-import models  # noqa: F401
+# Добавляем backend/ в sys.path для импорта app
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from app.core.database import Base  # noqa: E402
+
+# Импортируем все модели, чтобы alembic видел metadata
+from app.models import (  # noqa: F401, E402
+    User, ChallengeType, UserChallenge, Trade, Violation,
+    Payout, Achievement, UserAchievement, Referral, Notification, ScalingStep
+)
 
 config = context.config
 
@@ -18,27 +27,29 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-# Берём DATABASE_URL из переменной окружения
-DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-# Railway даёт URL вида postgresql://... или postgres://...
-# Alembic для миграций использует синхронный psycopg2
-# Поэтому делаем правильный URL для каждого случая
-def get_sync_url(url: str) -> str:
-    """Конвертируем любой формат URL в синхронный для Alembic."""
-    url = url.replace("postgresql+asyncpg://", "postgresql://")
-    url = url.replace("postgres://", "postgresql://")
+def _get_sync_url() -> str:
+    raw = os.getenv("DATABASE_URL", "")
+    if not raw:
+        # Строим из компонентов
+        host = os.getenv("DB_HOST", "localhost")
+        port = os.getenv("DB_PORT", "5432")
+        user = os.getenv("DB_USER", "postgres")
+        password = os.getenv("DB_PASSWORD", "password")
+        name = os.getenv("DB_NAME", "chm_krypton")
+        raw = f"postgresql://{user}:{password}@{host}:{port}/{name}"
+    raw = raw.replace("postgresql+asyncpg://", "postgresql://")
+    raw = raw.replace("postgres://", "postgresql://")
+    return raw
+
+
+def _get_async_url(sync_url: str) -> str:
+    url = sync_url.replace("postgresql://", "postgresql+asyncpg://")
     return url
 
-def get_async_url(url: str) -> str:
-    """Конвертируем любой формат URL в асинхронный для приложения."""
-    url = url.replace("postgres://", "postgresql+asyncpg://")
-    if url.startswith("postgresql://") and "+asyncpg" not in url:
-        url = url.replace("postgresql://", "postgresql+asyncpg://")
-    return url
 
-SYNC_URL = get_sync_url(DATABASE_URL)
-ASYNC_URL = get_async_url(DATABASE_URL)
+SYNC_URL = _get_sync_url()
+ASYNC_URL = _get_async_url(SYNC_URL)
 
 config.set_main_option("sqlalchemy.url", SYNC_URL)
 
@@ -49,6 +60,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        compare_type=True,
     )
     with context.begin_transaction():
         context.run_migrations()

@@ -1,29 +1,43 @@
 version: "3.9"
 
+# ──────────────────────────────────────────────────────────
+# CHM_KRYPTON — Docker Compose
+# ──────────────────────────────────────────────────────────
+
 services:
+
+  # ── PostgreSQL ──────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
-    container_name: prop_postgres
+    container_name: chm_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: prop_trading
+      POSTGRES_DB: chm_krypton
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-securepassword}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-chm_krypton_secret}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d prop_trading"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chm_krypton"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - chm_network
 
+  # ── Redis ───────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: prop_redis
+    container_name: chm_redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
     volumes:
       - redis_data:/data
     ports:
@@ -33,18 +47,26 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - chm_network
 
+  # ── Backend (FastAPI + APScheduler) ────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: prop_backend
+    container_name: chm_backend
     restart: unless-stopped
     env_file:
-      - ./backend/.env
+      - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-securepassword}@postgres:5432/prop_trading
-      REDIS_URL: redis://redis:6379/0
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-chm_krypton_secret}
+      DB_NAME: chm_krypton
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     ports:
       - "8000:8000"
     depends_on:
@@ -54,35 +76,55 @@ services:
         condition: service_healthy
     command: >
       sh -c "
+        cd /app &&
         alembic upgrade head &&
-        uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2 --loop uvloop
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --loop uvloop
       "
+    volumes:
+      - ./backend:/app
+    networks:
+      - chm_network
 
+  # ── Telegram Bot (aiogram) ──────────────────────────────
   bot:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: prop_bot
+    container_name: chm_bot
     restart: unless-stopped
     env_file:
-      - ./backend/.env
+      - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-securepassword}@postgres:5432/prop_trading
-      REDIS_URL: redis://redis:6379/0
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-chm_krypton_secret}
+      DB_NAME: chm_krypton
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: python bot.py
+      backend:
+        condition: service_started
+    command: python -m app.bot.main
+    volumes:
+      - ./backend:/app
+    networks:
+      - chm_network
 
+  # ── Frontend (Nginx + React build) ─────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-https://your-domain.com/api/v1}
-    container_name: prop_frontend
+        VITE_API_URL: ${VITE_API_URL:-https://your-backend.com/api/v1}
+        VITE_WS_URL: ${VITE_WS_URL:-wss://your-backend.com/ws}
+        VITE_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-chm_krypton_bot}
+    container_name: chm_frontend
     restart: unless-stopped
     ports:
       - "80:80"
@@ -92,7 +134,15 @@ services:
       - ./ssl:/etc/nginx/ssl:ro
     depends_on:
       - backend
+    networks:
+      - chm_network
 
 volumes:
   postgres_data:
+    driver: local
   redis_data:
+    driver: local
+
+networks:
+  chm_network:
+    driver: bridge
