@@ -5,6 +5,7 @@ import asyncio
 import sys
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from loguru import logger
 
@@ -20,7 +21,7 @@ async def main() -> None:
 
     bot = Bot(
         token=settings.telegram_bot_token,
-        parse_mode=ParseMode.HTML,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher()
 
