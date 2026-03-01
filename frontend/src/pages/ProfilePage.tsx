@@ -50,20 +50,19 @@ export function ProfilePage() {
     ? getRankByStats(performance.total_trades ?? 0, performance.win_rate ?? 0)
     : null
 
-  const unlockedIds = new Set(achievements.map((a) => a.achievement_id))
+  const unlockedIds = new Set(achievements.map((a) => a.id))
 
   return (
     <div className="flex flex-col pb-24 bg-bg-primary min-h-dvh">
       {/* Rank card */}
       <div className="mx-4 mt-4 glass-card p-5 flex items-center gap-4">
         <AnimatedRank
-          totalTrades={performance?.total_trades ?? 0}
-          winRate={performance?.win_rate ?? 0}
+          rank={rank ?? 'isotope'}
           size={80}
         />
         <div className="flex-1 min-w-0">
           <p className="text-text-secondary text-xs mb-1">Твой ранг</p>
-          <p className="font-bold text-white text-lg">{rank?.name ?? 'Isotope'}</p>
+          <p className="font-bold text-white text-lg">{rank ? rank.charAt(0).toUpperCase() + rank.slice(1) : 'Isotope'}</p>
           <div className="flex gap-3 mt-2">
             <div>
               <p className="text-xs text-text-muted">Сделок</p>
@@ -137,7 +136,7 @@ export function ProfilePage() {
             }}
           >
             <p className="text-text-muted text-xs mb-2 tracking-widest uppercase">CHM KRYPTON Trader</p>
-            <p className="text-2xl font-bold text-white mb-1">{rank?.name ?? 'Isotope'}</p>
+            <p className="text-2xl font-bold text-white mb-1">{rank ? rank.charAt(0).toUpperCase() + rank.slice(1) : 'Isotope'}</p>
             <p className="num text-profit text-lg">{(performance?.win_rate ?? 0).toFixed(1)}% Win Rate</p>
             <p className="num text-text-secondary text-sm mt-1">{performance?.total_trades ?? 0} сделок</p>
             <p className="text-text-muted text-xs mt-3">t.me/chm_krypton</p>
@@ -160,8 +159,8 @@ function AchievementsTab({
 }) {
   if (isLoading) return <CardSkeleton />
 
-  const unlocked = allAchievements.filter((a) => unlockedIds.has(a.achievement_id))
-  const locked = allAchievements.filter((a) => !unlockedIds.has(a.achievement_id))
+  const unlocked = allAchievements.filter((a) => unlockedIds.has(a.id))
+  const locked = allAchievements.filter((a) => !unlockedIds.has(a.id))
 
   return (
     <div className="space-y-4">
@@ -173,15 +172,16 @@ function AchievementsTab({
           <div className="grid grid-cols-3 gap-3">
             {unlocked.map((ach) => (
               <motion.div
-                key={ach.achievement_id}
+                key={ach.id}
                 className="flex flex-col items-center gap-1.5"
                 initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
               >
                 <AchievementBadge
-                  achievement={ach}
-                  unlocked={true}
-                  level="gold"
+                  name={ach.name}
+                  lottieSrc={ach.lottie_file}
+                  level={ach.level || 'gold'}
+                  progress={ach.progress}
                 />
                 <p className="text-xs text-white text-center leading-tight">{ach.name}</p>
               </motion.div>
@@ -196,11 +196,12 @@ function AchievementsTab({
           </p>
           <div className="grid grid-cols-3 gap-3">
             {locked.map((ach) => (
-              <div key={ach.achievement_id} className="flex flex-col items-center gap-1.5">
+              <div key={ach.id} className="flex flex-col items-center gap-1.5">
                 <AchievementBadge
-                  achievement={ach}
-                  unlocked={false}
+                  name={ach.name}
+                  lottieSrc={ach.lottie_file}
                   level="locked"
+                  progress={ach.progress}
                 />
                 <p className="text-xs text-text-muted text-center leading-tight">{ach.name}</p>
               </div>
