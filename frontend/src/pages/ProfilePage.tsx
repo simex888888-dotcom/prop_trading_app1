@@ -154,7 +154,7 @@ function AchievementsTab({
   isLoading,
 }: {
   allAchievements: any[]
-  unlockedIds: Set<string>
+  unlockedIds: Set<number>
   isLoading: boolean
 }) {
   if (isLoading) return <CardSkeleton />
