@@ -43,7 +43,7 @@ export function ScalingPage() {
     )
   }
 
-  const initialBalance = challenge?.challenge_type?.initial_balance ?? 10000
+  const initialBalance = challenge?.challenge_type?.account_size ?? challenge?.initial_balance ?? 10000
   const currentBalance = challenge?.current_balance ?? initialBalance
   const scalingStep = challenge?.scaling_step ?? 0
   const totalPnlPct = rules?.current_profit_pct ?? 0
