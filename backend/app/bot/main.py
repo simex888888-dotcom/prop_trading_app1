@@ -34,6 +34,11 @@ async def main() -> None:
 
     logger.info(f"Starting CHM_KRYPTON bot @{settings.telegram_bot_username}")
 
+    # Remove any webhook and drop stale updates so previous instances release their
+    # long-poll connections quickly during rolling redeploys.
+    await bot.delete_webhook(drop_pending_updates=True)
+    logger.info("Webhook deleted, starting polling...")
+
     try:
         await dp.start_polling(
             bot,
