@@ -16,4 +16,4 @@ RUN mkdir -p logs
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python prestart.py && PGOPTIONS='-c lock_timeout=15000 -c statement_timeout=60000' alembic upgrade head && echo '>>> Alembic OK, starting uvicorn on port ${PORT:-8000}...' && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "set -e; echo '>>> [1/3] prestart...'; python prestart.py; echo '>>> [2/3] alembic...'; alembic upgrade head; echo '>>> [3/3] starting uvicorn on port '${PORT:-8000}'...'; exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --log-level info"]

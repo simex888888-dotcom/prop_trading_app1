@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom'
 export function ChallengesPage() {
   const [selected, setSelected] = useState<ChallengeType | null>(null)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [purchaseError, setPurchaseError] = useState('')
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const setActiveChallenge = useAppStore((s) => s.setActiveChallenge)
@@ -33,8 +34,16 @@ export function ChallengesPage() {
     onSuccess: (challenge) => {
       queryClient.invalidateQueries({ queryKey: ['my-challenges'] })
       setActiveChallenge(challenge)
+      setPurchaseError('')
       setShowConfirm(false)
       navigate('/dashboard')
+    },
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.detail ??
+        err?.message ??
+        'Ошибка при создании испытания. Попробуйте позже.'
+      setPurchaseError(String(msg))
     },
   })
 
@@ -189,9 +198,9 @@ export function ChallengesPage() {
               )}
             </motion.button>
 
-            {purchaseMutation.isError && (
+            {purchaseError && (
               <p className="text-loss text-sm text-center">
-                Ошибка при создании испытания. Попробуйте позже.
+                {purchaseError}
               </p>
             )}
           </div>

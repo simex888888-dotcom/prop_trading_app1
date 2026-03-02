@@ -140,11 +140,7 @@ function AuthGate() {
   if (status === 'loading') {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center bg-bg-primary gap-4">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
-          className="w-12 h-12 rounded-full border-2 border-brand-primary border-t-transparent"
-        />
+        <div className="w-12 h-12 rounded-full border-2 border-brand-primary border-t-transparent animate-spin" />
         <p className="text-text-secondary text-sm">Загрузка CHM KRYPTON...</p>
       </div>
     )

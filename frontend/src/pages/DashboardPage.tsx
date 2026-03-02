@@ -12,18 +12,29 @@ import { EquitySparkline } from '@/components/charts/EquitySparkline'
 import { AnimatedRank, getRankByStats } from '@/components/animated/AnimatedRank'
 import { useAppStore } from '@/store/appStore'
 
-function ModeBadge({ mode }: { mode?: string }) {
-  const isDemo = mode === 'demo'
+function ModeBadge({ mode, hasChallengeActive }: { mode?: string; hasChallengeActive?: boolean }) {
+  const isFunded = mode === 'funded'
+  const isChallenge = mode === 'demo' && hasChallengeActive
+
+  const bg = isFunded
+    ? 'rgba(0,212,170,0.15)'
+    : isChallenge
+    ? 'rgba(108,99,255,0.15)'
+    : 'rgba(255,165,2,0.15)'
+  const color = isFunded ? '#00D4AA' : isChallenge ? '#6C63FF' : '#FFA502'
+  const border = isFunded
+    ? 'rgba(0,212,170,0.3)'
+    : isChallenge
+    ? 'rgba(108,99,255,0.3)'
+    : 'rgba(255,165,2,0.3)'
+  const label = isFunded ? '● FUNDED' : isChallenge ? '● ИСПЫТАНИЕ' : '● DEMO'
+
   return (
     <span
       className="text-xs px-2 py-0.5 rounded-full font-bold"
-      style={{
-        background: isDemo ? 'rgba(255,165,2,0.15)' : 'rgba(0,212,170,0.15)',
-        color: isDemo ? '#FFA502' : '#00D4AA',
-        border: `1px solid ${isDemo ? 'rgba(255,165,2,0.3)' : 'rgba(0,212,170,0.3)'}`,
-      }}
+      style={{ background: bg, color, border: `1px solid ${border}` }}
     >
-      {isDemo ? '● DEMO' : '● FUNDED'}
+      {label}
     </span>
   )
 }
@@ -96,12 +107,12 @@ export function DashboardPage() {
       {/* Header */}
       <motion.div variants={item} className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">CHM_KRYPTON</h1>
+          <h1 className="text-xl font-bold text-white">CHM KRYPTON</h1>
           <p className="text-text-secondary text-xs">Trade Like an Element</p>
         </div>
         <div className="flex items-center gap-3">
           <AnimatedRank rank={rank} size={44} showLabel={false} />
-          <ModeBadge mode={d?.account_mode} />
+          <ModeBadge mode={d?.account_mode} hasChallengeActive={!!d?.active_challenge_id} />
         </div>
       </motion.div>
 
