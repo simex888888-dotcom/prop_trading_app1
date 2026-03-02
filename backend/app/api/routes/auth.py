@@ -2,6 +2,7 @@
 /auth — авторизация через Telegram initData, JWT токены.
 """
 from datetime import timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
@@ -40,9 +41,6 @@ class TokenResponse(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
-
-
-from typing import Optional
 
 
 @router.post("/telegram", response_model=APIResponse[TokenResponse])
