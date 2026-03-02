@@ -34,10 +34,14 @@ async def main() -> None:
 
     logger.info(f"Starting CHM_KRYPTON bot @{settings.telegram_bot_username}")
 
-    # Remove any webhook and drop stale updates so previous instances release their
-    # long-poll connections quickly during rolling redeploys.
+    # Give Railway ~5 s to SIGTERM the previous container before we start polling.
+    # Without this delay, the old container's retry loop kicks us out first.
+    logger.info("Waiting 5 s for previous instance to shut down...")
+    await asyncio.sleep(5)
+
+    # Drop any webhook and stale updates left by the old instance.
     await bot.delete_webhook(drop_pending_updates=True)
-    logger.info("Webhook deleted, starting polling...")
+    logger.info("Webhook cleared, starting polling...")
 
     try:
         await dp.start_polling(
