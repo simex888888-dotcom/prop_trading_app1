@@ -136,13 +136,30 @@ app.include_router(admin.router, prefix=API_PREFIX)
 
 # ─── Health check ─────────────────────────────────────────────────────────────
 
+@app.get("/ping")
+async def ping() -> dict:
+    """Быстрый healthcheck без DB/Redis — всегда отвечает."""
+    return {"status": "ok", "service": "chm-krypton", "version": settings.app_version}
+
+
 @app.get("/health")
 async def health_check() -> dict:
     redis_ok = False
+    db_ok = False
     try:
         redis = await get_redis()
-        await redis.ping()
+        await asyncio.wait_for(redis.ping(), timeout=3.0)
         redis_ok = True
+    except Exception:
+        pass
+    try:
+        from sqlalchemy import text
+        from app.core.database import get_engine
+        engine = get_engine(settings.database_url_async)
+        async with asyncio.timeout(3):
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+        db_ok = True
     except Exception:
         pass
     return {
@@ -151,4 +168,5 @@ async def health_check() -> dict:
         "version": settings.app_version,
         "env": settings.app_env,
         "redis": redis_ok,
+        "db": db_ok,
     }
