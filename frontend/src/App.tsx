@@ -121,7 +121,15 @@ function AuthGate() {
           setStatus('ready')
         }
       } catch (e: any) {
-        setErrorMsg(e?.response?.data?.detail ?? e?.message ?? 'Ошибка авторизации')
+        const detail = e?.response?.data?.detail
+        const status = e?.response?.status
+        const msg = e?.message ?? 'unknown'
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+        setErrorMsg(
+          detail
+            ? `${detail} (HTTP ${status})`
+            : `${msg} | API: ${apiUrl}`
+        )
         setStatus('error')
       }
     }
