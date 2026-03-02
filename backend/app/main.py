@@ -44,6 +44,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Redis connection failed: {e}")
 
+    # Проверка PostgreSQL
+    try:
+        from sqlalchemy import text
+        from app.core.database import get_engine
+        engine = get_engine(settings.database_url_async)
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("PostgreSQL connected")
+    except Exception as e:
+        logger.error(f"PostgreSQL connection failed: {e}")
+
     # Запуск APScheduler
     scheduler = setup_scheduler()
     scheduler.start()

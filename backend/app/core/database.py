@@ -24,6 +24,8 @@ def get_engine(database_url: str):
             max_overflow=20,
             pool_pre_ping=True,
             pool_recycle=3600,
+            pool_timeout=10,
+            connect_args={"timeout": 10},
         )
     return _engine
 
