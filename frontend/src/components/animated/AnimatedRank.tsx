@@ -2,7 +2,7 @@
  * AnimatedRank — WebM видео ранга с прозрачностью.
  * Isotope → Reagent → Catalyst → Molecule → Crystal → Nucleus → Krypton
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export type RankName = 'isotope' | 'reagent' | 'catalyst' | 'molecule' | 'crystal' | 'nucleus' | 'krypton'
 
@@ -26,6 +26,16 @@ const RANK_COLORS: Record<RankName, string> = {
   krypton: '#FFD700',
 }
 
+const RANK_EMOJI: Record<RankName, string> = {
+  isotope: '⚛️',
+  reagent: '🧪',
+  catalyst: '⚗️',
+  molecule: '🔬',
+  crystal: '💎',
+  nucleus: '⚡',
+  krypton: '🌟',
+}
+
 interface AnimatedRankProps {
   rank: RankName
   size?: number
@@ -35,7 +45,12 @@ interface AnimatedRankProps {
 
 export function AnimatedRank({ rank, size = 64, showLabel = true, className = '' }: AnimatedRankProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [videoFailed, setVideoFailed] = useState(false)
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  useEffect(() => {
+    setVideoFailed(false)
+  }, [rank])
 
   useEffect(() => {
     if (videoRef.current && !reducedMotion) {
@@ -45,6 +60,8 @@ export function AnimatedRank({ rank, size = 64, showLabel = true, className = ''
 
   const color = RANK_COLORS[rank]
   const label = RANK_LABELS[rank]
+  const emoji = RANK_EMOJI[rank]
+  const showFallback = reducedMotion || videoFailed
 
   return (
     <div className={`flex flex-col items-center gap-1 ${className}`}>
@@ -57,19 +74,18 @@ export function AnimatedRank({ rank, size = 64, showLabel = true, className = ''
           boxShadow: `0 0 20px ${color}40`,
         }}
       >
-        {reducedMotion ? (
-          /* Статичный placeholder */
+        {showFallback ? (
           <div
-            className="rounded-full flex items-center justify-center text-lg font-bold"
+            className="rounded-full flex items-center justify-center font-bold"
             style={{
               width: size * 0.75,
               height: size * 0.75,
               background: `linear-gradient(135deg, ${color}40, ${color}10)`,
-              color,
               border: `2px solid ${color}60`,
+              fontSize: size * 0.38,
             }}
           >
-            {label[0]}
+            {emoji}
           </div>
         ) : (
           <video
@@ -80,11 +96,7 @@ export function AnimatedRank({ rank, size = 64, showLabel = true, className = ''
             muted
             playsInline
             style={{ width: size * 0.85, height: size * 0.85, objectFit: 'contain' }}
-            onError={(e) => {
-              // Fallback если файл не найден
-              const target = e.currentTarget
-              target.style.display = 'none'
-            }}
+            onError={() => setVideoFailed(true)}
           />
         )}
       </div>

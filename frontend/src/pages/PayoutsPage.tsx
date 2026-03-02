@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 import { payoutsApi, type Payout } from '@/api/client'
 import { useAppStore } from '@/store/appStore'
 import { BottomSheet } from '@/components/ui/BottomSheet'
@@ -18,6 +19,7 @@ const NETWORKS = [
 export function PayoutsPage() {
   const activeChallengeId = useAppStore((s) => s.activeChallengeId)
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   const [requestSheet, setRequestSheet] = useState(false)
   const [amount, setAmount] = useState('')
@@ -76,7 +78,14 @@ export function PayoutsPage() {
   return (
     <div className="flex flex-col pb-24 bg-bg-primary min-h-dvh">
       {/* Header */}
-      <div className="px-4 pt-4 pb-3">
+      <div className="px-4 pt-4 pb-3 flex items-center gap-3">
+        <button
+          onClick={() => navigate(-1)}
+          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+          style={{ background: 'rgba(255,255,255,0.06)' }}
+        >
+          ‹
+        </button>
         <h1 className="text-xl font-bold text-white">Выплаты</h1>
       </div>
 

@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 import { challengesApi } from '@/api/client'
 import { useAppStore } from '@/store/appStore'
 import { RiskMeter } from '@/components/ui/RiskMeter'
@@ -14,6 +15,7 @@ type RulesTab = 'rules' | 'calculator'
 export function RulesPage() {
   const activeChallengeId = useAppStore((s) => s.activeChallengeId)
   const [activeTab, setActiveTab] = useState<RulesTab>('rules')
+  const navigate = useNavigate()
 
   const { data: rules, isLoading } = useQuery({
     queryKey: ['challenge-rules', activeChallengeId],
@@ -22,26 +24,28 @@ export function RulesPage() {
     refetchInterval: 30_000,
   })
 
-  if (!activeChallengeId) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-8 text-center">
-        <span className="text-5xl">📜</span>
-        <h2 className="text-xl font-bold text-white">Нет активного испытания</h2>
-        <p className="text-text-secondary">Купи испытание, чтобы видеть правила</p>
-      </div>
-    )
-  }
-
   return (
     <div className="flex flex-col pb-24 bg-bg-primary min-h-dvh">
       {/* Header */}
-      <div className="px-4 pt-4 pb-3">
-        <h1 className="text-xl font-bold text-white">Правила</h1>
-        {rules && (
-          <p className="text-text-secondary text-sm mt-0.5">
-            {rules.challenge_type_name} · {rules.phase}
-          </p>
-        )}
+      <div className="px-4 pt-4 pb-3 flex items-center gap-3">
+        <button
+          onClick={() => navigate(-1)}
+          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+          style={{ background: 'rgba(255,255,255,0.06)' }}
+        >
+          ‹
+        </button>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl font-bold text-white">Правила</h1>
+          {rules && (
+            <p className="text-text-secondary text-sm mt-0.5">
+              {rules.challenge_type_name} · {rules.phase}
+            </p>
+          )}
+          {!activeChallengeId && (
+            <p className="text-text-secondary text-sm mt-0.5">Общие условия</p>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -64,12 +68,40 @@ export function RulesPage() {
       {activeTab === 'rules' && (
         isLoading ? <div className="px-4"><CardSkeleton /></div>
           : rules ? <RulesContent rules={rules} />
-          : <p className="text-center text-text-muted py-8">Ошибка загрузки правил</p>
+          : <StaticRules />
       )}
 
       {activeTab === 'calculator' && (
         <RiskCalculator accountSize={rules?.initial_balance ?? 10000} />
       )}
+    </div>
+  )
+}
+
+function StaticRules() {
+  return (
+    <div className="px-4 space-y-3">
+      <div className="glass-card p-4 space-y-2">
+        <p className="text-sm font-semibold text-white mb-3">Стандартные условия CHM KRYPTON</p>
+        <RuleItem icon="🎯" label="Цель по прибыли Phase 1" value="10%" ok={true} />
+        <RuleItem icon="🎯" label="Цель по прибыли Phase 2" value="5%" ok={true} />
+        <RuleItem icon="🛡️" label="Дневной лимит убытка" value="-5%" ok={false} />
+        <RuleItem icon="⚠️" label="Общий лимит убытка" value="-10%" ok={false} />
+        <RuleItem icon="📊" label="Минимум торговых дней" value="5 дней" ok={true} />
+        <RuleItem icon="💰" label="Профит-шер (funded)" value="80%" ok={true} />
+      </div>
+      <div className="glass-card p-4 space-y-2">
+        <p className="text-sm font-semibold text-white mb-3">Дополнительные ограничения</p>
+        <RuleItem icon="⏰" label="Торговля на новостях" value="Запрещено" ok={false} />
+        <RuleItem icon="🌙" label="Удержание через ночь" value="Разрешено" ok={true} />
+        <RuleItem icon="📅" label="Удержание через выходные" value="Запрещено" ok={false} />
+        <RuleItem icon="🎯" label="Правило консистентности" value="Включено" ok={true} />
+      </div>
+      <div className="glass-card p-4">
+        <p className="text-xs text-text-muted text-center">
+          Купи испытание, чтобы видеть прогресс в реальном времени
+        </p>
+      </div>
     </div>
   )
 }

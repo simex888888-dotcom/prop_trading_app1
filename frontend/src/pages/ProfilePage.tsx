@@ -82,7 +82,7 @@ export function ProfilePage() {
         </div>
         <button
           onClick={() => setShareSheet(true)}
-          className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold"
+          className="shrink-0 self-start px-3 py-1.5 rounded-xl text-xs font-semibold"
           style={{ background: 'rgba(108,99,255,0.15)', color: '#6C63FF' }}
         >
           Поделиться
@@ -261,9 +261,13 @@ function LeaderboardTab({ entries, isLoading }: { entries: any[]; isLoading: boo
 }
 
 function ReferralTab({ referral, isLoading }: { referral: any; isLoading: boolean }) {
+  const [copied, setCopied] = useState(false)
+
   const copyLink = () => {
     if (referral?.referral_link) {
       navigator.clipboard.writeText(referral.referral_link).catch(() => {})
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
     }
   }
 
@@ -280,10 +284,13 @@ function ReferralTab({ referral, isLoading }: { referral: any; isLoading: boolea
           </p>
           <button
             onClick={copyLink}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0"
-            style={{ background: 'rgba(108,99,255,0.15)', color: '#6C63FF' }}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-colors"
+            style={{
+              background: copied ? 'rgba(0,212,170,0.15)' : 'rgba(108,99,255,0.15)',
+              color: copied ? '#00D4AA' : '#6C63FF',
+            }}
           >
-            Копировать
+            {copied ? '✓ Скопировано' : 'Копировать'}
           </button>
         </div>
       </div>
