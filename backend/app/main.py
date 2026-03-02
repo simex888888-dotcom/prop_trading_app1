@@ -132,11 +132,17 @@ app.include_router(admin.router, prefix=API_PREFIX)
 
 @app.get("/health")
 async def health_check() -> dict:
-    redis = await get_redis()
-    await redis.ping()
+    redis_ok = False
+    try:
+        redis = await get_redis()
+        await redis.ping()
+        redis_ok = True
+    except Exception:
+        pass
     return {
         "status": "ok",
         "service": "chm-krypton",
         "version": settings.app_version,
         "env": settings.app_env,
+        "redis": redis_ok,
     }
