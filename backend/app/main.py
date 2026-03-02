@@ -1,6 +1,7 @@
 """
 CHM_KRYPTON — FastAPI Application Entry Point
 """
+import asyncio
 import sys
 from contextlib import asynccontextmanager
 
@@ -36,22 +37,27 @@ async def lifespan(app: FastAPI):
     """Запуск и остановка сервисов."""
     logger.info(f"Starting CHM_KRYPTON v{settings.app_version} in {settings.app_env} mode")
 
-    # Проверка Redis
+    # Проверка Redis (с таймаутом — без него ping может зависнуть навсегда)
     try:
         redis = await get_redis()
-        await redis.ping()
+        await asyncio.wait_for(redis.ping(), timeout=5.0)
         logger.info("Redis connected")
+    except asyncio.TimeoutError:
+        logger.error("Redis connection timed out after 5 s — continuing without Redis")
     except Exception as e:
         logger.error(f"Redis connection failed: {e}")
 
-    # Проверка PostgreSQL
+    # Проверка PostgreSQL (с таймаутом)
     try:
         from sqlalchemy import text
         from app.core.database import get_engine
         engine = get_engine(settings.database_url_async)
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
+        async with asyncio.timeout(5):
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
         logger.info("PostgreSQL connected")
+    except TimeoutError:
+        logger.error("PostgreSQL connection timed out after 5 s — continuing")
     except Exception as e:
         logger.error(f"PostgreSQL connection failed: {e}")
 
