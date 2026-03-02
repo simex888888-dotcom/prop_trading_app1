@@ -58,6 +58,12 @@ class AuthMiddleware(BaseMiddleware):
                     data["session"] = session
                 except Exception as e:
                     logger.error(f"AuthMiddleware error: {e}")
+                    # DB недоступна — отправляем сообщение и прерываем обработку
+                    if isinstance(event, Update) and event.message:
+                        await event.message.answer(
+                            "⚠️ Сервис временно недоступен. Попробуйте позже."
+                        )
+                    return
                 break
 
         return await handler(event, data)
