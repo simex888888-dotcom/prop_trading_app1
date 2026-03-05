@@ -173,9 +173,41 @@ export function ChallengesPage() {
               </div>
             </div>
 
-            <p className="text-text-muted text-xs text-center">
-              Demo-счёт на Bybit будет создан автоматически
-            </p>
+            {/* Payment wallet */}
+            <div
+              className="rounded-2xl p-4 space-y-2"
+              style={{ background: 'rgba(108,99,255,0.08)', border: '1px solid rgba(108,99,255,0.25)' }}
+            >
+              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                💳 Оплата — USDT BEP20
+              </p>
+              <p className="text-xs text-text-muted">
+                Переведите <span className="text-white font-bold num">${selected.price} USDT</span> на кошелёк:
+              </p>
+              <div
+                className="rounded-xl px-3 py-2 flex items-center justify-between gap-2"
+                style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <span
+                  className="text-xs text-white font-mono break-all select-all"
+                  style={{ wordBreak: 'break-all' }}
+                >
+                  0x075c92cd6e2895c280d540cec4e84617c0378463
+                </span>
+                <button
+                  className="shrink-0 text-xs px-2 py-1 rounded-lg font-semibold"
+                  style={{ background: 'rgba(108,99,255,0.3)', color: '#a89fff' }}
+                  onClick={() => {
+                    navigator.clipboard?.writeText('0x075c92cd6e2895c280d540cec4e84617c0378463')
+                  }}
+                >
+                  Копировать
+                </button>
+              </div>
+              <p className="text-xs text-text-muted">
+                Сеть: <span className="text-profit font-semibold">BEP20 (BSC)</span> · После оплаты пришлите скриншот боту для активации.
+              </p>
+            </div>
 
             <motion.button
               className="w-full py-4 rounded-2xl font-bold text-white"
@@ -194,7 +226,7 @@ export function ChallengesPage() {
                   Создаём счёт...
                 </span>
               ) : (
-                `Оплатить $${selected.price} и начать`
+                `Подтвердить оплату $${selected.price}`
               )}
             </motion.button>
 
