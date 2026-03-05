@@ -1,14 +1,14 @@
 """add pending_payment status and demo_account_username column
 
-Revision ID: 003
-Revises: 002
+Revision ID: 003_pending_payment
+Revises: 002_seed_data
 Create Date: 2026-03-05
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "003"
-down_revision = "002"
+revision = "003_pending_payment"
+down_revision = "002_seed_data"
 branch_labels = None
 depends_on = None
 
