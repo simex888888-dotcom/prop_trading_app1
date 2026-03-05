@@ -191,4 +191,20 @@ async def request_payout(
     session.add(payout)
     await session.commit()
 
+    # Notify admin about new payout request
+    try:
+        from app.services.notification_service import NotificationService
+        notif = NotificationService(session)
+        username_display = f"@{user.username}" if user.username else f"User #{user.id}"
+        await notif.send_to_super_admin(
+            f"💰 <b>Новый запрос на выплату</b>\n\n"
+            f"👤 Трейдер: {username_display}\n"
+            f"💵 Сумма: <b>${float(body.amount):.2f}</b>\n"
+            f"🌐 Сеть: {body.network}\n"
+            f"📋 Challenge #{body.challenge_id}\n"
+            f"🏦 Кошелёк: <code>{body.wallet_address}</code>"
+        )
+    except Exception:
+        pass  # Non-critical: payout was created successfully
+
     return APIResponse(data=PayoutOut.model_validate(payout))

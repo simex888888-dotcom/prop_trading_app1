@@ -81,8 +81,8 @@ export function PayoutsPage() {
       <div className="px-4 pt-4 pb-3 flex items-center gap-3">
         <button
           onClick={() => navigate(-1)}
-          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-          style={{ background: 'rgba(255,255,255,0.06)' }}
+          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white text-xl font-bold"
+          style={{ background: 'rgba(255,255,255,0.08)' }}
         >
           ‹
         </button>

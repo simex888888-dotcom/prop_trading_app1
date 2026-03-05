@@ -6,7 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 
-import { authApi } from '@/api/client'
+import { authApi, challengesApi } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import { useAppStore } from '@/store/appStore'
 import { AnimatedTabBar } from '@/components/animated/AnimatedTabBar'
@@ -81,6 +81,7 @@ function AppLayout() {
 
 function AuthGate() {
   const setTokens = useAuthStore((s) => s.setTokens)
+  const setUser = useAuthStore((s) => s.setUser)
   const accessToken = useAuthStore((s) => s.accessToken)
   const setActiveChallenge = useAppStore((s) => s.setActiveChallenge)
 
@@ -114,6 +115,18 @@ function AuthGate() {
         // Authenticate with backend
         const result = await authApi.loginTelegram(initData)
         setTokens(result.access_token, result.refresh_token)
+        setUser(result.user_id, result.role)
+
+        // Load the user's active challenge so activeChallengeId is available
+        try {
+          const myChallenges = await challengesApi.my()
+          const active = myChallenges.find(
+            (c) => c.status === 'phase1' || c.status === 'phase2' || c.status === 'funded'
+          )
+          if (active) setActiveChallenge(active)
+        } catch {
+          // Non-critical: user can still use the app without an active challenge
+        }
 
         if (result.is_new) {
           setStatus('onboarding')
