@@ -103,6 +103,8 @@ export const challengesApi = {
   getViolations: (id: number) => get<Violation[]>(`/challenges/${id}/violations`),
   purchase: (challengeTypeId: number) =>
     post<UserChallenge>('/challenges/purchase', { challenge_type_id: challengeTypeId }),
+  getAccountDetails: (challengeId: number) =>
+    get<AccountDetails>(`/challenges/${challengeId}/account-details`),
 }
 
 // ── Trading ──────────────────────────────────────────────────────────────────
@@ -195,11 +197,18 @@ export interface ChallengeType {
   profit_split_pct: number
 }
 
+export interface AccountDetails {
+  bybit_uid: string
+  username: string
+  api_key: string
+  account_mode: string
+}
+
 export interface UserChallenge {
   id: number
   challenge_type_id: number
   challenge_type?: ChallengeType
-  status: 'phase1' | 'phase2' | 'funded' | 'failed' | 'completed'
+  status: 'pending_payment' | 'phase1' | 'phase2' | 'funded' | 'failed' | 'completed'
   phase: number | null
   account_mode: 'demo' | 'funded'
   initial_balance: number

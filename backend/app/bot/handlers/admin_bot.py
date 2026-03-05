@@ -487,3 +487,112 @@ async def handle_admin_callback(callback: CallbackQuery, session: AsyncSession) 
             f"<i>Чтобы указать причину, используйте веб-панель.</i>",
             parse_mode="HTML",
         )
+
+    # ── Подтверждение оплаты испытания ────────────────────────────────────────
+
+    elif action == "approve_challenge" and len(parts) > 2:
+        challenge_id = int(parts[2])
+        ch_result = await session.execute(
+            select(UserChallenge)
+            .where(
+                UserChallenge.id == challenge_id,
+                UserChallenge.status == ChallengeStatus.pending_payment,
+            )
+        )
+        challenge = ch_result.scalar_one_or_none()
+        if not challenge:
+            await callback.message.answer("❌ Заявка не найдена или уже обработана.")
+            return
+
+        # Создаём demo-аккаунт на Bybit и активируем испытание
+        from app.core.security import encrypt_aes256
+        now = datetime.now(timezone.utc)
+        demo_username = None
+
+        ct_res = await session.execute(
+            select(ChallengeType).where(ChallengeType.id == challenge.challenge_type_id)
+        )
+        ct = ct_res.scalar_one_or_none()
+
+        user_res = await session.execute(select(User).where(User.id == challenge.user_id))
+        user = user_res.scalar_one_or_none()
+
+        if settings.bybit_master_api_key and ct:
+            from app.services.exchange.bybit_master import BybitMasterClient
+            master = BybitMasterClient()
+            try:
+                demo_account = await master.setup_demo_challenge_account(
+                    account_size=ct.account_size,
+                    username_prefix=f"CHM{user.telegram_id if user else challenge.user_id}",
+                )
+                challenge.demo_account_id = demo_account["account_id"]
+                challenge.demo_account_username = demo_account.get("username")
+                demo_username = demo_account.get("username")
+                challenge.demo_api_key_enc = encrypt_aes256(demo_account["api_key"])
+                challenge.demo_api_secret_enc = encrypt_aes256(demo_account["api_secret"])
+            except Exception as e:
+                logger.warning(f"Bybit account creation failed for challenge {challenge_id}: {e}")
+            finally:
+                await master.close()
+
+        challenge.status = ChallengeStatus.phase1
+        challenge.phase = 1
+        challenge.started_at = now
+
+        if user and user.role == UserRole.guest:
+            user.role = UserRole.challenger
+
+        await session.commit()
+
+        # Уведомить трейдера
+        if user:
+            from app.services.notification_service import NotificationService
+            notif = NotificationService(session)
+            await notif.send_challenge_activated(user.telegram_id, challenge)
+
+        await callback.message.answer(
+            f"✅ <b>Оплата подтверждена! Испытание #{challenge_id} активировано</b>\n"
+            f"👤 User ID: {challenge.user_id}\n"
+            f"{'🏷 Bybit username: ' + demo_username if demo_username else ''}",
+            parse_mode="HTML",
+        )
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+
+    elif action == "reject_challenge" and len(parts) > 2:
+        challenge_id = int(parts[2])
+        ch_result = await session.execute(
+            select(UserChallenge)
+            .where(
+                UserChallenge.id == challenge_id,
+                UserChallenge.status == ChallengeStatus.pending_payment,
+            )
+        )
+        challenge = ch_result.scalar_one_or_none()
+        if not challenge:
+            await callback.message.answer("❌ Заявка не найдена или уже обработана.")
+            return
+
+        user_res = await session.execute(select(User).where(User.id == challenge.user_id))
+        user = user_res.scalar_one_or_none()
+
+        challenge.status = ChallengeStatus.failed
+        challenge.failed_at = datetime.now(timezone.utc)
+        challenge.failed_reason = "Payment not confirmed by admin"
+        await session.commit()
+
+        if user:
+            from app.services.notification_service import NotificationService
+            notif = NotificationService(session)
+            await notif.send_challenge_rejected(user.telegram_id, challenge_id)
+
+        await callback.message.answer(
+            f"❌ <b>Заявка #{challenge_id} отклонена</b>\nТрейдер уведомлён.",
+            parse_mode="HTML",
+        )
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass

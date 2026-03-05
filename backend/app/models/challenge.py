@@ -19,6 +19,7 @@ class DrawdownType(str, enum.Enum):
 
 
 class ChallengeStatus(str, enum.Enum):
+    pending_payment = "pending_payment"   # ожидает подтверждения оплаты от админа
     phase1 = "phase1"
     phase2 = "phase2"
     funded = "funded"
@@ -145,6 +146,7 @@ class UserChallenge(Base, TimestampMixin):
 
     # DEMO аккаунт Bybit (зашифровано AES-256)
     demo_account_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    demo_account_username: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     demo_api_key_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     demo_api_secret_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 

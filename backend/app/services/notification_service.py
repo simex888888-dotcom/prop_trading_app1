@@ -222,3 +222,67 @@ class NotificationService:
         if not settings.super_admin_tg_id:
             return
         await self._send_telegram(settings.super_admin_tg_id, message)
+
+    async def send_payment_pending_to_admins(
+        self,
+        challenge: "UserChallenge",
+        user_display: str,
+        plan_name: str,
+        plan_price: float,
+    ) -> None:
+        """Уведомляет всех администраторов о новой заявке на оплату (с кнопками Подтвердить/Отклонить)."""
+        if not settings.telegram_bot_token:
+            return
+        try:
+            from aiogram import Bot
+            from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+            bot = Bot(token=settings.telegram_bot_token)
+            text = (
+                f"💳 <b>Новая заявка на оплату!</b>\n\n"
+                f"👤 Пользователь: <b>{user_display}</b>\n"
+                f"📋 План: <b>{plan_name}</b>\n"
+                f"💰 Сумма: <b>${plan_price:.0f} USDT</b>\n"
+                f"🆔 Challenge ID: <code>{challenge.id}</code>\n\n"
+                f"После получения скриншота оплаты нажмите ✅ Подтвердить."
+            )
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(
+                    text="✅ Подтвердить оплату",
+                    callback_data=f"adm:approve_challenge:{challenge.id}",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отклонить",
+                    callback_data=f"adm:reject_challenge:{challenge.id}",
+                ),
+            ]])
+            for admin_id in settings.admin_tg_ids:
+                try:
+                    await bot.send_message(
+                        chat_id=admin_id,
+                        text=text,
+                        parse_mode="HTML",
+                        reply_markup=keyboard,
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not notify admin {admin_id}: {e}")
+            await bot.session.close()
+        except Exception as e:
+            logger.error(f"Failed to send payment pending notification: {e}")
+
+    async def send_challenge_activated(self, telegram_id: int, challenge: "UserChallenge") -> None:
+        """Уведомляет трейдера об активации испытания."""
+        text = (
+            f"<b>✅ Оплата подтверждена! Испытание активировано</b>\n\n"
+            f"Счёт #{challenge.id} | Баланс: <b>${challenge.initial_balance:,.0f}</b>\n\n"
+            f"Открой приложение и начинай торговать! 🚀"
+        )
+        await self._send_telegram(telegram_id, text)
+
+    async def send_challenge_rejected(self, telegram_id: int, challenge_id: int) -> None:
+        """Уведомляет трейдера об отклонении оплаты."""
+        text = (
+            f"<b>❌ Оплата не подтверждена</b>\n\n"
+            f"Заявка #{challenge_id} отклонена администратором.\n"
+            f"Если считаете это ошибкой — обратитесь в поддержку."
+        )
+        await self._send_telegram(telegram_id, text)

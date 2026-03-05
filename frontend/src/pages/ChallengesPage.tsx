@@ -1,5 +1,6 @@
 /**
- * ChallengesPage — выбор и покупка испытания (RPG-карточки).
+ * ChallengesPage — выбор и покупка испытания.
+ * После оплаты план становится pending_payment — активируется только после подтверждения администратором.
  */
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -14,6 +15,7 @@ import { useNavigate } from 'react-router-dom'
 export function ChallengesPage() {
   const [selected, setSelected] = useState<ChallengeType | null>(null)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [showSuccess, setShowSuccess] = useState(false)
   const [purchaseError, setPurchaseError] = useState('')
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -31,18 +33,17 @@ export function ChallengesPage() {
 
   const purchaseMutation = useMutation({
     mutationFn: (id: number) => challengesApi.purchase(id),
-    onSuccess: (challenge) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-challenges'] })
-      setActiveChallenge(challenge)
       setPurchaseError('')
       setShowConfirm(false)
-      navigate('/dashboard')
+      setShowSuccess(true)
     },
     onError: (err: any) => {
       const msg =
         err?.response?.data?.detail ??
         err?.message ??
-        'Ошибка при создании испытания. Попробуйте позже.'
+        'Ошибка при создании заявки. Попробуйте позже.'
       setPurchaseError(String(msg))
     },
   })
@@ -50,6 +51,8 @@ export function ChallengesPage() {
   const activeChallenge = myChallenges.find(
     (c) => c.status === 'phase1' || c.status === 'phase2' || c.status === 'funded'
   )
+  const pendingChallenge = myChallenges.find((c) => c.status === 'pending_payment')
+  const botUsername = (import.meta.env.VITE_BOT_USERNAME as string) || 'chm_prop_bot'
 
   return (
     <div className="flex flex-col gap-4 pt-4 pb-24">
@@ -86,13 +89,30 @@ export function ChallengesPage() {
         </motion.div>
       )}
 
-      {/* Challenge cards horizontal scroll */}
+      {/* Pending payment banner */}
+      {pendingChallenge && !activeChallenge && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mx-4 glass-card p-4 space-y-1"
+          style={{ border: '1px solid rgba(255,180,0,0.35)', background: 'rgba(255,180,0,0.05)' }}
+        >
+          <p className="text-xs font-semibold" style={{ color: '#FFB400' }}>
+            ⏳ Ожидание подтверждения оплаты
+          </p>
+          <p className="text-sm text-text-secondary">
+            Заявка #{pendingChallenge.id} на рассмотрении.{' '}
+            Отправьте скриншот оплаты боту{' '}
+            <span className="text-white font-semibold">@{botUsername}</span>.
+          </p>
+        </motion.div>
+      )}
+
+      {/* Challenge cards */}
       {isLoading ? (
         <div className="flex gap-4 px-4 overflow-x-auto pb-2">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="shrink-0 w-52">
-              <CardSkeleton />
-            </div>
+            <div key={i} className="shrink-0 w-52"><CardSkeleton /></div>
           ))}
         </div>
       ) : (
@@ -109,9 +129,9 @@ export function ChallengesPage() {
         </div>
       )}
 
-      {/* Buy button */}
+      {/* Buy button — only if no active/pending challenge */}
       <AnimatePresence>
-        {selected && (
+        {selected && !activeChallenge && !pendingChallenge && (
           <motion.div
             className="px-4"
             initial={{ opacity: 0, y: 20 }}
@@ -136,7 +156,7 @@ export function ChallengesPage() {
         )}
       </AnimatePresence>
 
-      {/* Confirm bottom sheet */}
+      {/* ── Confirm bottom sheet ── */}
       <BottomSheet
         isOpen={showConfirm && !!selected}
         onClose={() => setShowConfirm(false)}
@@ -144,6 +164,7 @@ export function ChallengesPage() {
       >
         {selected && (
           <div className="p-5 space-y-5">
+            {/* Plan summary */}
             <div className="glass-card p-4 space-y-3">
               <div className="flex justify-between text-sm">
                 <span className="text-text-secondary">Испытание</span>
@@ -151,9 +172,7 @@ export function ChallengesPage() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-text-secondary">Счёт</span>
-                <span className="text-white num font-semibold">
-                  ${selected.account_size.toLocaleString()}
-                </span>
+                <span className="text-white num font-semibold">${selected.account_size.toLocaleString()}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-text-secondary">Цель P1</span>
@@ -188,25 +207,31 @@ export function ChallengesPage() {
                 className="rounded-xl px-3 py-2 flex items-center justify-between gap-2"
                 style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)' }}
               >
-                <span
-                  className="text-xs text-white font-mono break-all select-all"
-                  style={{ wordBreak: 'break-all' }}
-                >
+                <span className="text-xs text-white font-mono break-all select-all" style={{ wordBreak: 'break-all' }}>
                   0x075c92cd6e2895c280d540cec4e84617c0378463
                 </span>
                 <button
                   className="shrink-0 text-xs px-2 py-1 rounded-lg font-semibold"
                   style={{ background: 'rgba(108,99,255,0.3)', color: '#a89fff' }}
-                  onClick={() => {
-                    navigator.clipboard?.writeText('0x075c92cd6e2895c280d540cec4e84617c0378463')
-                  }}
+                  onClick={() => navigator.clipboard?.writeText('0x075c92cd6e2895c280d540cec4e84617c0378463')}
                 >
                   Копировать
                 </button>
               </div>
               <p className="text-xs text-text-muted">
-                Сеть: <span className="text-profit font-semibold">BEP20 (BSC)</span> · После оплаты пришлите скриншот боту для активации.
+                Сеть: <span className="text-profit font-semibold">BEP20 (BSC)</span>
               </p>
+            </div>
+
+            {/* How it works */}
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">📋 Как это работает</p>
+              <p className="text-sm text-text-secondary">1️⃣ Переведите ${selected.price} USDT на кошелёк выше</p>
+              <p className="text-sm text-text-secondary">2️⃣ Нажмите кнопку ниже — заявка создана</p>
+              <p className="text-sm text-text-secondary">
+                3️⃣ Отправьте скриншот в бот <span className="text-white font-semibold">@{botUsername}</span>
+              </p>
+              <p className="text-sm text-text-secondary">4️⃣ Администратор активирует испытание после проверки</p>
             </div>
 
             <motion.button
@@ -223,20 +248,56 @@ export function ChallengesPage() {
                     animate={{ rotate: 360 }}
                     transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
                   />
-                  Создаём счёт...
+                  Создаём заявку...
                 </span>
               ) : (
-                `Подтвердить оплату $${selected.price}`
+                `✅ Я оплатил — создать заявку $${selected.price}`
               )}
             </motion.button>
 
             {purchaseError && (
-              <p className="text-loss text-sm text-center">
-                {purchaseError}
-              </p>
+              <p className="text-loss text-sm text-center">{purchaseError}</p>
             )}
           </div>
         )}
+      </BottomSheet>
+
+      {/* ── Success sheet (pending_payment created) ── */}
+      <BottomSheet
+        isOpen={showSuccess}
+        onClose={() => setShowSuccess(false)}
+        title="Заявка создана!"
+      >
+        <div className="p-5 space-y-4">
+          <div className="text-center">
+            <div className="text-5xl mb-3">⏳</div>
+            <h3 className="text-lg font-bold text-white">Ожидаем подтверждения</h3>
+            <p className="text-text-secondary text-sm mt-2">
+              Заявка принята. Отправьте скриншот оплаты в бот — администраторы активируют испытание после проверки транзакции.
+            </p>
+          </div>
+
+          <div
+            className="rounded-2xl p-4"
+            style={{ background: 'rgba(108,99,255,0.08)', border: '1px solid rgba(108,99,255,0.25)' }}
+          >
+            <p className="text-xs text-text-secondary mb-2 font-semibold">Следующий шаг:</p>
+            <p className="text-sm text-white">
+              Откройте бот{' '}
+              <span className="font-bold text-profit">@{botUsername}</span>{' '}
+              и отправьте скриншот перевода USDT.
+            </p>
+          </div>
+
+          <motion.button
+            className="w-full py-4 rounded-2xl font-bold text-white"
+            style={{ background: 'linear-gradient(135deg, #6C63FF, #00D4AA)' }}
+            onClick={() => { setShowSuccess(false); navigate('/dashboard') }}
+            whileTap={{ scale: 0.97 }}
+          >
+            Понятно
+          </motion.button>
+        </div>
       </BottomSheet>
     </div>
   )
