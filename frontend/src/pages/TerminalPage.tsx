@@ -51,11 +51,12 @@ export function TerminalPage() {
     return () => ws.close()
   }, [activeChallengeId, accessToken])
 
-  // Kline data
+  // Kline data — poll every 2 s for 1m/5m, 5 s for higher timeframes
+  const klineInterval = ['1', '5'].includes(timeframe) ? 2_000 : 5_000
   const { data: klines = [] } = useQuery({
     queryKey: ['klines', selectedPair, timeframe],
     queryFn: () => tradingApi.getKline(selectedPair, timeframe),
-    refetchInterval: 10_000,
+    refetchInterval: klineInterval,
   })
 
   // Open orders

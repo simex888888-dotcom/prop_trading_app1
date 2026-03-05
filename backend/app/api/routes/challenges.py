@@ -11,7 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from loguru import logger
+
 from app.api.dependencies import get_current_user, rate_limit_standard
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import encrypt_aes256
 from app.models.challenge import ChallengeStatus, ChallengeType, UserChallenge
@@ -160,22 +163,35 @@ async def purchase_challenge(
         )
 
     # Создаём demo аккаунт на Bybit
-    from app.services.exchange.bybit_master import BybitMasterClient
-    master = BybitMasterClient()
-    try:
-        demo_account = await master.setup_demo_challenge_account(
-            account_size=ct.account_size,
-            username_prefix=f"CHM{user.telegram_id}",
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Failed to create demo account: {str(e)}",
-        )
-    finally:
-        await master.close()
-
+    # Если Bybit API недоступен или не настроен — создаём испытание в ручном режиме.
     now = datetime.now(timezone.utc)
+    demo_account_id = f"PENDING_{user.telegram_id}_{int(now.timestamp())}"
+    demo_api_key_enc = ""
+    demo_api_secret_enc = ""
+
+    if settings.bybit_master_api_key:
+        from app.services.exchange.bybit_master import BybitMasterClient
+        master = BybitMasterClient()
+        try:
+            demo_account = await master.setup_demo_challenge_account(
+                account_size=ct.account_size,
+                username_prefix=f"CHM{user.telegram_id}",
+            )
+            demo_account_id = demo_account["account_id"]
+            demo_api_key_enc = encrypt_aes256(demo_account["api_key"])
+            demo_api_secret_enc = encrypt_aes256(demo_account["api_secret"])
+        except Exception as e:
+            logger.warning(
+                f"Bybit account creation failed for user {user.id}: {e}. "
+                f"Challenge will be created in manual/pending mode."
+            )
+        finally:
+            await master.close()
+    else:
+        logger.info(
+            f"BYBIT_MASTER_API_KEY not set — creating challenge in manual mode for user {user.id}"
+        )
+
     challenge = UserChallenge(
         user_id=user.id,
         challenge_type_id=ct.id,
@@ -183,9 +199,9 @@ async def purchase_challenge(
         phase=1,
         account_mode="demo",
         exchange="bybit",
-        demo_account_id=demo_account["account_id"],
-        demo_api_key_enc=encrypt_aes256(demo_account["api_key"]),
-        demo_api_secret_enc=encrypt_aes256(demo_account["api_secret"]),
+        demo_account_id=demo_account_id,
+        demo_api_key_enc=demo_api_key_enc,
+        demo_api_secret_enc=demo_api_secret_enc,
         initial_balance=ct.account_size,
         current_balance=ct.account_size,
         peak_equity=ct.account_size,
