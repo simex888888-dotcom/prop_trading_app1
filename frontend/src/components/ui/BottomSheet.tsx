@@ -1,8 +1,15 @@
 /**
  * BottomSheet — выдвижная нижняя панель с drag-жестом (свайп вниз закрывает).
+ * Свайп вверх/вниз за рукоятку. При слабом свайпе — пружинный возврат.
  */
-import { motion, AnimatePresence, useDragControls, useMotionValue, useTransform } from 'framer-motion'
-import { ReactNode, useRef } from 'react'
+import {
+  motion,
+  AnimatePresence,
+  useDragControls,
+  useMotionValue,
+  animate as motionAnimate,
+} from 'framer-motion'
+import { ReactNode } from 'react'
 
 interface BottomSheetProps {
   isOpen: boolean
@@ -16,13 +23,12 @@ export function BottomSheet({ isOpen, onClose, children, title, height = '70vh' 
   const dragControls = useDragControls()
   const y = useMotionValue(0)
 
-  // Backdrop opacity dims as sheet is dragged down
-  const backdropOpacity = useTransform(y, [0, 200], [1, 0.2])
-
   function handleDragEnd(_: unknown, info: { offset: { y: number }; velocity: { y: number } }) {
-    // Close if dragged down far enough or flicked fast enough
-    if (info.offset.y > 120 || info.velocity.y > 500) {
+    if (info.offset.y > 100 || info.velocity.y > 400) {
       onClose()
+    } else {
+      // Пружинный возврат в исходное положение
+      motionAnimate(y, 0, { type: 'spring', stiffness: 400, damping: 40 })
     }
   }
 
@@ -36,7 +42,7 @@ export function BottomSheet({ isOpen, onClose, children, title, height = '70vh' 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            style={{ opacity: backdropOpacity }}
+            transition={{ duration: 0.2 }}
             onPointerUp={(e) => { if (e.target === e.currentTarget) onClose() }}
           />
 
@@ -47,21 +53,24 @@ export function BottomSheet({ isOpen, onClose, children, title, height = '70vh' 
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            transition={{ type: 'spring', damping: 32, stiffness: 320 }}
             drag="y"
             dragControls={dragControls}
-            dragListener={false}     // only the handle starts dragging
+            dragListener={false}
             dragConstraints={{ top: 0 }}
-            dragElastic={{ top: 0.05, bottom: 0.3 }}
+            dragElastic={{ top: 0.03, bottom: 0.35 }}
             onDragEnd={handleDragEnd}
           >
-            {/* Drag handle — touch here to drag */}
+            {/* Drag handle */}
             <div
               className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing shrink-0"
-              onPointerDown={(e) => dragControls.start(e)}
+              onPointerDown={(e) => {
+                e.preventDefault()
+                dragControls.start(e)
+              }}
               style={{ touchAction: 'none' }}
             >
-              <div className="w-10 h-1 bg-bg-border rounded-full" />
+              <div className="w-12 h-1.5 bg-bg-border rounded-full" />
             </div>
 
             {/* Header */}
@@ -78,11 +87,10 @@ export function BottomSheet({ isOpen, onClose, children, title, height = '70vh' 
               </div>
             )}
 
-            {/* Scrollable content */}
+            {/* Scrollable content — stopPropagation prevents drag while scrolling */}
             <div
-              className="overflow-y-auto flex-1"
+              className="overflow-y-auto flex-1 overscroll-contain"
               style={{ maxHeight: `calc(${height} - 80px)` }}
-              // prevent drag from triggering while scrolling
               onPointerDown={(e) => e.stopPropagation()}
             >
               {children}
