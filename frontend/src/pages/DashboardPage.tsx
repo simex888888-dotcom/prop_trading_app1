@@ -1,13 +1,15 @@
 /**
  * DashboardPage — главный дашборд CHM_KRYPTON.
  */
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { statsApi } from '@/api/client'
+import { statsApi, challengesApi } from '@/api/client'
 import { PnLNumber } from '@/components/ui/PnLNumber'
 import { RiskMeter } from '@/components/ui/RiskMeter'
 import { DashboardSkeleton } from '@/components/ui/LoadingSkeleton'
+import { BottomSheet } from '@/components/ui/BottomSheet'
 import { EquitySparkline } from '@/components/charts/EquitySparkline'
 import { AnimatedRank, getRankByStats } from '@/components/animated/AnimatedRank'
 import { useAppStore } from '@/store/appStore'
@@ -67,6 +69,31 @@ function ProgressBar({ value, max = 100, color = '#6C63FF', label }: {
 export function DashboardPage() {
   const navigate = useNavigate()
   const activeChallengeId = useAppStore((s) => s.activeChallengeId)
+  const [showAccountDetails, setShowAccountDetails] = useState(false)
+  const [accountDetails, setAccountDetails] = useState<{ bybit_uid: string; username: string; api_key: string; account_mode: string } | null>(null)
+  const [loadingDetails, setLoadingDetails] = useState(false)
+  const [copiedField, setCopiedField] = useState<string | null>(null)
+
+  async function handleShowAccountDetails() {
+    if (!activeChallengeId) return
+    setLoadingDetails(true)
+    try {
+      const details = await challengesApi.getAccountDetails(activeChallengeId)
+      setAccountDetails(details)
+      setShowAccountDetails(true)
+    } catch (e) {
+      // silently ignore — user will see empty state
+      setShowAccountDetails(true)
+    } finally {
+      setLoadingDetails(false)
+    }
+  }
+
+  function copyToClipboard(text: string, field: string) {
+    navigator.clipboard?.writeText(text)
+    setCopiedField(field)
+    setTimeout(() => setCopiedField(null), 2000)
+  }
 
   const { data: dashboard, isLoading } = useQuery({
     queryKey: ['dashboard', activeChallengeId],
@@ -207,6 +234,14 @@ export function DashboardPage() {
         <QuickAction icon="📋" label="Правила" onClick={() => navigate('/rules')} color="#00D4AA" />
         <QuickAction icon="💰" label="Выплаты" onClick={() => navigate('/payouts')} color="#FFA502" />
         <QuickAction icon="🏆" label="Рейтинг" onClick={() => navigate('/profile')} color="#FFD700" />
+        {d?.active_challenge_id && (
+          <QuickAction
+            icon={loadingDetails ? '⏳' : '🔑'}
+            label="Bybit аккаунт"
+            onClick={handleShowAccountDetails}
+            color="#00B8FF"
+          />
+        )}
       </motion.div>
 
       {/* No active challenge */}
@@ -230,6 +265,88 @@ export function DashboardPage() {
           </motion.button>
         </motion.div>
       )}
+
+      {/* Account details bottom sheet */}
+      <BottomSheet
+        isOpen={showAccountDetails}
+        onClose={() => setShowAccountDetails(false)}
+        title="Bybit субаккаунт"
+      >
+        <div className="p-5 space-y-4">
+          {accountDetails ? (
+            <>
+              <p className="text-text-secondary text-sm text-center">
+                Эти данные — ваш Bybit субаккаунт для торговли.
+                Вы можете торговать прямо в приложении или подключить аккаунт в Bybit по API ключу.
+              </p>
+
+              {/* Trade in app */}
+              <motion.button
+                className="w-full py-4 rounded-2xl font-bold text-white"
+                style={{ background: 'linear-gradient(135deg, #6C63FF, #00D4AA)' }}
+                onClick={() => { setShowAccountDetails(false); navigate('/terminal') }}
+                whileTap={{ scale: 0.97 }}
+              >
+                ⚡ Торговать в приложении
+              </motion.button>
+
+              <div className="relative flex items-center">
+                <div className="flex-1 border-t border-bg-border" />
+                <span className="px-3 text-xs text-text-muted">или используйте API</span>
+                <div className="flex-1 border-t border-bg-border" />
+              </div>
+
+              {/* Credentials */}
+              {[
+                { label: 'Bybit UID', value: accountDetails.bybit_uid, field: 'uid' },
+                { label: 'Sub-account username', value: accountDetails.username || '—', field: 'username' },
+                { label: 'API Key', value: accountDetails.api_key || '—', field: 'api_key' },
+              ].map(({ label, value, field }) => (
+                <div key={field}
+                  className="glass-card p-3 space-y-1"
+                  style={{ border: '1px solid rgba(255,255,255,0.06)' }}
+                >
+                  <p className="text-xs text-text-muted">{label}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-white font-mono break-all">{value}</span>
+                    {value !== '—' && (
+                      <button
+                        onClick={() => copyToClipboard(value, field)}
+                        className="shrink-0 text-xs px-2 py-1 rounded-lg font-semibold transition-all"
+                        style={{
+                          background: copiedField === field ? 'rgba(0,212,170,0.2)' : 'rgba(108,99,255,0.2)',
+                          color: copiedField === field ? '#00D4AA' : '#a89fff',
+                        }}
+                      >
+                        {copiedField === field ? '✓' : 'Копировать'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              <p className="text-xs text-text-muted text-center">
+                ⚠️ API Secret доступен только в момент создания субаккаунта. Торговля через приложение не требует API ключей.
+              </p>
+            </>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-text-secondary">Нет данных о субаккаунте</p>
+              <p className="text-xs text-text-muted mt-2">
+                Возможно, аккаунт был создан вручную администратором
+              </p>
+              <motion.button
+                className="mt-4 w-full py-4 rounded-2xl font-bold text-white"
+                style={{ background: 'linear-gradient(135deg, #6C63FF, #00D4AA)' }}
+                onClick={() => { setShowAccountDetails(false); navigate('/terminal') }}
+                whileTap={{ scale: 0.97 }}
+              >
+                ⚡ Торговать в приложении
+              </motion.button>
+            </div>
+          )}
+        </div>
+      </BottomSheet>
     </motion.div>
   )
 }

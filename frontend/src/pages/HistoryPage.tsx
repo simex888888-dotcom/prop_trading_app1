@@ -224,7 +224,7 @@ function TradeRow({ trade, onShare }: { trade: TradeHistory; onShare: () => void
             {date.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
           </span>
           <button
-            onClick={onShare}
+            onClick={(e) => { e.stopPropagation(); onShare() }}
             className="text-xs px-2 py-0.5 rounded"
             style={{ background: 'rgba(108,99,255,0.15)', color: '#6C63FF' }}
           >
@@ -246,7 +246,7 @@ function SharePnLOverlay({ trade, onClose }: { trade: TradeHistory; onClose: () 
       style={{ background: 'rgba(0,0,0,0.85)' }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      onClick={onClose}
+      onPointerUp={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <motion.div
         className="w-full max-w-sm rounded-3xl p-6 relative overflow-hidden"

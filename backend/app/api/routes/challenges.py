@@ -16,7 +16,7 @@ from loguru import logger
 from app.api.dependencies import get_current_user, rate_limit_standard
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import encrypt_aes256
+from app.core.security import encrypt_aes256, decrypt_aes256
 from app.models.challenge import ChallengeStatus, ChallengeType, UserChallenge
 from app.models.user import User, UserRole
 from app.models.violation import Violation
@@ -135,7 +135,8 @@ async def purchase_challenge(
     _: None = Depends(rate_limit_standard),
 ) -> APIResponse[UserChallengeOut]:
     """
-    Покупка испытания — создаёт demo аккаунт на Bybit и активирует испытание.
+    Покупка испытания — создаёт запись со статусом pending_payment.
+    Активация происходит только после подтверждения оплаты администратором.
     """
     # Получаем тип испытания
     ct_result = await session.execute(
@@ -149,11 +150,11 @@ async def purchase_challenge(
         raise HTTPException(status_code=404, detail="Challenge type not found")
 
     # Один пользователь — одно активное испытание в любой момент времени.
-    # Запрещаем покупку если есть хотя бы одно в фазе 1, 2 или funded.
     existing = await session.execute(
         select(UserChallenge).where(
             UserChallenge.user_id == user.id,
             UserChallenge.status.in_([
+                ChallengeStatus.pending_payment,
                 ChallengeStatus.phase1,
                 ChallengeStatus.phase2,
                 ChallengeStatus.funded,
@@ -163,49 +164,22 @@ async def purchase_challenge(
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=409,
-            detail="You already have an active challenge. Complete or fail the current one before starting a new one.",
+            detail="You already have an active or pending challenge. Complete or fail the current one before starting a new one.",
         )
 
-    # Создаём demo аккаунт на Bybit
-    # Если Bybit API недоступен или не настроен — создаём испытание в ручном режиме.
     now = datetime.now(timezone.utc)
-    demo_account_id = f"PENDING_{user.telegram_id}_{int(now.timestamp())}"
-    demo_api_key_enc = ""
-    demo_api_secret_enc = ""
 
-    if settings.bybit_master_api_key:
-        from app.services.exchange.bybit_master import BybitMasterClient
-        master = BybitMasterClient()
-        try:
-            demo_account = await master.setup_demo_challenge_account(
-                account_size=ct.account_size,
-                username_prefix=f"CHM{user.telegram_id}",
-            )
-            demo_account_id = demo_account["account_id"]
-            demo_api_key_enc = encrypt_aes256(demo_account["api_key"])
-            demo_api_secret_enc = encrypt_aes256(demo_account["api_secret"])
-        except Exception as e:
-            logger.warning(
-                f"Bybit account creation failed for user {user.id}: {e}. "
-                f"Challenge will be created in manual/pending mode."
-            )
-        finally:
-            await master.close()
-    else:
-        logger.info(
-            f"BYBIT_MASTER_API_KEY not set — creating challenge in manual mode for user {user.id}"
-        )
-
+    # Создаём запись в статусе pending_payment — Bybit аккаунт создадим после подтверждения
     challenge = UserChallenge(
         user_id=user.id,
         challenge_type_id=ct.id,
-        status=ChallengeStatus.phase1,
-        phase=1,
+        status=ChallengeStatus.pending_payment,
+        phase=None,
         account_mode="demo",
         exchange="bybit",
-        demo_account_id=demo_account_id,
-        demo_api_key_enc=demo_api_key_enc,
-        demo_api_secret_enc=demo_api_secret_enc,
+        demo_account_id=f"PENDING_{user.telegram_id}_{int(now.timestamp())}",
+        demo_api_key_enc="",
+        demo_api_secret_enc="",
         initial_balance=ct.account_size,
         current_balance=ct.account_size,
         peak_equity=ct.account_size,
@@ -213,21 +187,24 @@ async def purchase_challenge(
         daily_pnl=Decimal("0"),
         total_pnl=Decimal("0"),
         trading_days_count=0,
-        started_at=now,
+        started_at=None,
         daily_reset_at=now,
     )
     session.add(challenge)
-
-    # Обновляем роль пользователя
-    if user.role == UserRole.guest:
-        user.role = UserRole.challenger
+    await session.flush()
 
     await session.commit()
 
-    # Уведомление
+    # Уведомляем всех администраторов
     from app.services.notification_service import NotificationService
     notif = NotificationService(session)
-    await notif.send_challenge_purchased(challenge)
+    username_str = f"@{user.username}" if user.username else f"tg:{user.telegram_id}"
+    await notif.send_payment_pending_to_admins(
+        challenge=challenge,
+        user_display=username_str,
+        plan_name=ct.name,
+        plan_price=float(ct.price),
+    )
 
     return APIResponse(data=UserChallengeOut.model_validate(challenge))
 
@@ -330,6 +307,34 @@ async def get_challenge_violations(
     )
     violations = result.scalars().all()
     return APIResponse(data=[ViolationOut.model_validate(v) for v in violations])
+
+
+@router.get("/{challenge_id}/account-details", response_model=APIResponse[dict])
+async def get_account_details(
+    challenge_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[dict]:
+    """Возвращает детали Bybit суб-аккаунта (имя пользователя, UID, API ключ)."""
+    challenge = await _get_user_challenge(challenge_id, user.id, session)
+    if challenge.status not in (
+        ChallengeStatus.phase1, ChallengeStatus.phase2, ChallengeStatus.funded
+    ):
+        raise HTTPException(status_code=403, detail="Account details available only for active challenges")
+
+    api_key = ""
+    if challenge.demo_api_key_enc:
+        try:
+            api_key = decrypt_aes256(challenge.demo_api_key_enc)
+        except Exception:
+            pass
+
+    return APIResponse(data={
+        "bybit_uid": challenge.demo_account_id,
+        "username": challenge.demo_account_username or "",
+        "api_key": api_key,
+        "account_mode": challenge.account_mode,
+    })
 
 
 # ─── Вспомогательные функции ──────────────────────────────────────────────────

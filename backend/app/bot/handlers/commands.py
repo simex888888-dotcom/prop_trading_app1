@@ -1,9 +1,9 @@
 """
 Обработчики команд Telegram бота CHM_KRYPTON.
 """
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
-from aiogram.types import Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -208,3 +208,79 @@ async def cmd_referral(message: Message, db_user: User) -> None:
         f"Выплаты — каждые 7 дней автоматически."
     )
     await message.answer(text, parse_mode="HTML", reply_markup=get_open_app_keyboard())
+
+
+# ─── Обработчик скриншота оплаты ──────────────────────────────────────────────
+
+@router.message(F.photo)
+async def handle_payment_screenshot(
+    message: Message,
+    db_user: User,
+    session: AsyncSession,
+) -> None:
+    """
+    Когда пользователь отправляет фото — проверяем pending_payment испытание.
+    Если есть — пересылаем скриншот администраторам с кнопками Подтвердить/Отклонить.
+    """
+    result = await session.execute(
+        select(UserChallenge)
+        .where(
+            UserChallenge.user_id == db_user.id,
+            UserChallenge.status == ChallengeStatus.pending_payment,
+        )
+        .order_by(UserChallenge.created_at.desc())
+    )
+    challenge = result.scalars().first()
+
+    if not challenge:
+        await message.answer(
+            "📸 Фото получено. Если хотите оплатить испытание — сначала выберите план в приложении.",
+            reply_markup=get_open_app_keyboard(),
+        )
+        return
+
+    user_display = f"@{db_user.username}" if db_user.username else f"tg:{db_user.telegram_id}"
+    caption = (
+        f"📸 <b>Скриншот оплаты!</b>\n\n"
+        f"👤 {user_display}\n"
+        f"🆔 Challenge ID: <code>{challenge.id}</code>\n\n"
+        f"Проверьте оплату и нажмите кнопку:"
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="✅ Подтвердить",
+            callback_data=f"adm:approve_challenge:{challenge.id}",
+        ),
+        InlineKeyboardButton(
+            text="❌ Отклонить",
+            callback_data=f"adm:reject_challenge:{challenge.id}",
+        ),
+    ]])
+
+    from aiogram import Bot
+    bot = Bot(token=settings.telegram_bot_token)
+    photo_id = message.photo[-1].file_id
+
+    forwarded = 0
+    for admin_id in settings.admin_tg_ids:
+        try:
+            await bot.send_photo(
+                chat_id=admin_id,
+                photo=photo_id,
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=keyboard,
+            )
+            forwarded += 1
+        except Exception as e:
+            logger.warning(f"Could not forward screenshot to admin {admin_id}: {e}")
+    await bot.session.close()
+
+    if forwarded > 0:
+        await message.answer(
+            "✅ <b>Скриншот получен и отправлен администраторам!</b>\n\n"
+            "Ожидайте подтверждения — обычно это занимает до 24 часов.",
+            parse_mode="HTML",
+        )
+    else:
+        await message.answer("⚠️ Не удалось уведомить администраторов. Напишите в поддержку.")

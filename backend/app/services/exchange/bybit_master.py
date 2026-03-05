@@ -361,6 +361,7 @@ class BybitMasterClient:
         )
         return {
             "account_id": sub_uid,
+            "username": username,
             "api_key": api_result["apiKey"],
             "api_secret": api_result["secret"],
             "demo_funded": demo_funded,
