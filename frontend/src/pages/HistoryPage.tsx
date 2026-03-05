@@ -45,14 +45,15 @@ export function HistoryPage() {
     enabled: !!activeChallengeId,
   })
 
-  const trades = (data?.pages.flatMap((p) => p.trades) ?? []).filter((t) => {
-    if (filterResult === 'Win') return t.pnl > 0
-    if (filterResult === 'Loss') return t.pnl <= 0
+  const trades = (data?.pages.flatMap((p) => p.trades ?? []) ?? []).filter((t) => {
+    if (!t) return false
+    if (filterResult === 'Win') return (t.pnl ?? 0) > 0
+    if (filterResult === 'Loss') return (t.pnl ?? 0) <= 0
     return true
   })
 
-  const totalPnl = trades.reduce((s, t) => s + t.pnl, 0)
-  const winCount = trades.filter((t) => t.pnl > 0).length
+  const totalPnl = trades.reduce((s, t) => s + (t.pnl ?? 0), 0)
+  const winCount = trades.filter((t) => (t.pnl ?? 0) > 0).length
   const winRate = trades.length > 0 ? (winCount / trades.length) * 100 : 0
 
   if (!activeChallengeId) {
@@ -181,8 +182,9 @@ export function HistoryPage() {
 
 function TradeRow({ trade, onShare }: { trade: TradeHistory; onShare: () => void }) {
   const isLong = trade.side === 'Buy'
-  const isProfit = trade.pnl > 0
-  const date = new Date(trade.closed_at ?? trade.created_at)
+  const isProfit = (trade.pnl ?? 0) > 0
+  const dateStr = trade.closed_at ?? trade.created_at
+  const date = dateStr ? new Date(dateStr) : new Date()
 
   return (
     <motion.div
@@ -238,7 +240,7 @@ function TradeRow({ trade, onShare }: { trade: TradeHistory; onShare: () => void
 
 function SharePnLOverlay({ trade, onClose }: { trade: TradeHistory; onClose: () => void }) {
   const isLong = trade.side === 'Buy'
-  const isProfit = trade.pnl > 0
+  const isProfit = (trade.pnl ?? 0) > 0
 
   return (
     <motion.div
