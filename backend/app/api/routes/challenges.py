@@ -148,18 +148,22 @@ async def purchase_challenge(
     if not ct:
         raise HTTPException(status_code=404, detail="Challenge type not found")
 
-    # Проверяем, нет ли уже активного испытания такого типа
+    # Один пользователь — одно активное испытание в любой момент времени.
+    # Запрещаем покупку если есть хотя бы одно в фазе 1, 2 или funded.
     existing = await session.execute(
         select(UserChallenge).where(
             UserChallenge.user_id == user.id,
-            UserChallenge.challenge_type_id == ct.id,
-            UserChallenge.status.in_([ChallengeStatus.phase1, ChallengeStatus.phase2]),
+            UserChallenge.status.in_([
+                ChallengeStatus.phase1,
+                ChallengeStatus.phase2,
+                ChallengeStatus.funded,
+            ]),
         )
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=409,
-            detail="You already have an active challenge of this type",
+            detail="You already have an active challenge. Complete or fail the current one before starting a new one.",
         )
 
     # Создаём demo аккаунт на Bybit
