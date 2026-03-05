@@ -39,8 +39,15 @@ export function BottomSheet({ isOpen, onClose, children, title, height = '70vh' 
               <div className="w-10 h-1 bg-bg-border rounded-full" />
             </div>
             {title && (
-              <div className="px-5 pb-4 border-b border-bg-border">
+              <div className="px-5 pb-4 border-b border-bg-border flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-text-primary">{title}</h3>
+                <button
+                  onClick={onClose}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-text-secondary"
+                  style={{ background: 'rgba(255,255,255,0.06)' }}
+                >
+                  ✕
+                </button>
               </div>
             )}
             <div className="overflow-y-auto" style={{ maxHeight: `calc(${height} - 80px)` }}>
