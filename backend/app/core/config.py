@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     bybit_master_min_balance: float = 10_000.0
     bybit_demo_base_url: str = "https://api-demo.bybit.com"
     bybit_real_base_url: str = "https://api.bybit.com"
+    # Demo environment master API keys (created at demo.bybit.com → API Management)
+    # These are SEPARATE from the real account keys above.
+    # If not set, demo balance top-up is skipped (account still created).
+    bybit_demo_master_api_key: str = ""
+    bybit_demo_master_api_secret: str = ""
 
     # JWT
     jwt_secret: str = "change-me-jwt-secret-256-bit"

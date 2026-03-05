@@ -31,6 +31,11 @@ class BybitMasterClient:
     def __init__(self):
         self.api_key = settings.bybit_master_api_key
         self.api_secret = settings.bybit_master_api_secret
+        # Demo environment credentials — created at demo.bybit.com → API Management.
+        # These are completely separate from real account keys.
+        # If not set, fallback to real keys (demo top-up will be skipped gracefully).
+        self.demo_api_key = settings.bybit_demo_master_api_key or settings.bybit_master_api_key
+        self.demo_api_secret = settings.bybit_demo_master_api_secret or settings.bybit_master_api_secret
         self._client = httpx.AsyncClient(
             base_url=settings.bybit_real_base_url,
             timeout=15.0,
@@ -217,8 +222,16 @@ class BybitMasterClient:
     ) -> dict[str, Any]:
         """
         Пополняет demo баланс через Bybit Demo Trading API.
+        Требует DEMO API ключи (создаются на demo.bybit.com → API Management).
         https://bybit-exchange.github.io/docs/v5/demo
         """
+        if not settings.bybit_demo_master_api_key:
+            logger.warning(
+                "BYBIT_DEMO_MASTER_API_KEY not set — skipping demo balance top-up. "
+                "Create demo API keys at demo.bybit.com and set them in .env"
+            )
+            return {}
+
         demo_client = httpx.AsyncClient(
             base_url=settings.bybit_demo_base_url,
             timeout=10.0,
@@ -228,14 +241,15 @@ class BybitMasterClient:
             body_str = json_lib.dumps(body, separators=(",", ":"))
             timestamp = str(int(time.time() * 1000))
             recv_window = "5000"
-            sign_str = f"{timestamp}{self.api_key}{recv_window}{body_str}"
+            # Use demo credentials, not real ones
+            sign_str = f"{timestamp}{self.demo_api_key}{recv_window}{body_str}"
             signature = hmac.new(
-                self.api_secret.encode("utf-8"),
+                self.demo_api_secret.encode("utf-8"),
                 sign_str.encode("utf-8"),
                 hashlib.sha256,
             ).hexdigest()
             headers = {
-                "X-BAPI-API-KEY": self.api_key,
+                "X-BAPI-API-KEY": self.demo_api_key,
                 "X-BAPI-TIMESTAMP": timestamp,
                 "X-BAPI-SIGN": signature,
                 "X-BAPI-RECV-WINDOW": recv_window,
@@ -247,7 +261,7 @@ class BybitMasterClient:
                 headers=headers,
             )
             data = resp.json()
-            logger.info(f"Demo balance top-up for uid={uid}: {amount} {coin}")
+            logger.info(f"Demo balance top-up for uid={uid}: {amount} {coin}, response: {data.get('retCode')}")
             return data.get("result", {})
         finally:
             await demo_client.aclose()
@@ -303,44 +317,53 @@ class BybitMasterClient:
     ) -> dict[str, Any]:
         """
         Полный процесс создания Demo счёта для испытания:
-        1. Создаём суб-аккаунт
-        2. Активируем demo trading
-        3. Пополняем demo баланс
-        4. Создаём API ключи
+        1. Создаём суб-аккаунт (real API)
+        2. Создаём API ключи (real API)
+        3. Пополняем demo баланс (demo API) — опционально, требует BYBIT_DEMO_MASTER_API_KEY
         Returns: {
             "account_id": str,
             "api_key": str,
             "api_secret": str,
+            "demo_funded": bool,
         }
+        ВАЖНО: Для пополнения demo-баланса нужны отдельные ключи от demo.bybit.com.
+        Без них суб-аккаунт создаётся, но трейдеру придётся вручную запросить
+        demo-баланс в приложении Bybit (Demo Trading → Apply for funds).
         """
         import secrets
         suffix = secrets.token_hex(4).upper()
         username = f"{username_prefix}_{suffix}"
 
-        # 1. Создать реальный суб-аккаунт (нужен для demo trading)
+        # 1. Создать суб-аккаунт (real Bybit API)
         sub = await self.create_sub_account(username=username)
         sub_uid = str(sub["uid"])
 
-        # 2. Создать API ключи для demo
+        # 2. Создать API ключи (real Bybit API)
         api_result = await self.create_sub_api_key(
             sub_uid=sub_uid,
-            note=f"CHM_KRYPTON Demo Challenge {username}",
+            note=f"CHM_KRYPTON Demo {username}",
         )
 
-        # 3. Пополнить demo баланс через demo API
-        await self.top_up_demo_balance(
-            uid=sub_uid,
-            amount=str(account_size),
-        )
+        # 3. Пополнить demo баланс (опционально — требует demo API keys)
+        demo_funded = False
+        try:
+            result = await self.top_up_demo_balance(uid=sub_uid, amount=str(account_size))
+            demo_funded = bool(result)
+        except Exception as e:
+            logger.warning(
+                f"Demo balance top-up skipped for uid={sub_uid}: {e}. "
+                f"Trader must apply for demo funds manually in Bybit app."
+            )
 
         logger.info(
             f"Demo challenge account ready: uid={sub_uid}, "
-            f"balance={account_size} USDT"
+            f"balance={account_size} USDT, demo_funded={demo_funded}"
         )
         return {
             "account_id": sub_uid,
             "api_key": api_result["apiKey"],
             "api_secret": api_result["secret"],
+            "demo_funded": demo_funded,
         }
 
     async def setup_funded_account(

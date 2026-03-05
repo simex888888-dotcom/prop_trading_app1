@@ -8,7 +8,7 @@ import {
   CrosshairMode,
   LineStyle,
 } from 'lightweight-charts'
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import type { KlineBar } from '@/api/client'
 
@@ -39,6 +39,8 @@ export function TradingChart({
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<any>(null)
   const candleSeriesRef = useRef<any>(null)
+  // Track how many bars were already loaded so we only call update() for the last bar
+  const loadedBarsRef = useRef<number>(0)
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -88,12 +90,19 @@ export function TradingChart({
 
     return () => {
       observer.disconnect()
+      loadedBarsRef.current = 0
       chart.remove()
     }
   }, [])
 
+  // Reset loaded state when symbol or timeframe changes so next fetch is a full load
+  useEffect(() => {
+    loadedBarsRef.current = 0
+  }, [symbol, activeTimeframe])
+
   useEffect(() => {
     if (!candleSeriesRef.current || data.length === 0) return
+
     const chartData = data.map((bar) => ({
       time: bar.time as any,
       open: bar.open,
@@ -101,8 +110,29 @@ export function TradingChart({
       low: bar.low,
       close: bar.close,
     }))
-    candleSeriesRef.current.setData(chartData)
-    chartRef.current?.timeScale().fitContent()
+
+    const isFirstLoad = loadedBarsRef.current === 0
+
+    if (isFirstLoad) {
+      // Initial load: set all data and fit the view
+      candleSeriesRef.current.setData(chartData)
+      chartRef.current?.timeScale().fitContent()
+      loadedBarsRef.current = chartData.length
+    } else {
+      // Subsequent polls: only update/append changed bars to avoid full redraw.
+      // New bars may have been added, or only the last bar changed.
+      const prevCount = loadedBarsRef.current
+      if (chartData.length > prevCount) {
+        // New bars arrived — append them
+        for (let i = prevCount; i < chartData.length; i++) {
+          candleSeriesRef.current.update(chartData[i])
+        }
+        loadedBarsRef.current = chartData.length
+      } else if (chartData.length > 0) {
+        // Same bar count — just update the last (current) candle in-place
+        candleSeriesRef.current.update(chartData[chartData.length - 1])
+      }
+    }
   }, [data])
 
   return (
