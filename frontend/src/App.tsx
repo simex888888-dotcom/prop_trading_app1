@@ -81,6 +81,7 @@ function AppLayout() {
 
 function AuthGate() {
   const setTokens = useAuthStore((s) => s.setTokens)
+  const setUser = useAuthStore((s) => s.setUser)
   const accessToken = useAuthStore((s) => s.accessToken)
   const setActiveChallenge = useAppStore((s) => s.setActiveChallenge)
 
@@ -114,6 +115,7 @@ function AuthGate() {
         // Authenticate with backend
         const result = await authApi.loginTelegram(initData)
         setTokens(result.access_token, result.refresh_token)
+        setUser(result.user_id, result.role)
 
         if (result.is_new) {
           setStatus('onboarding')

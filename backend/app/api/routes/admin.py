@@ -5,7 +5,9 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from datetime import timezone
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,12 +15,15 @@ from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import get_current_user, require_admin, require_super_admin
 from app.core.database import get_db
-from app.models.challenge import ChallengeStatus, ChallengeType, UserChallenge
+from app.models.challenge import AccountMode, ChallengeStatus, ChallengeType, UserChallenge
 from app.models.payout import Payout, PayoutStatus
 from app.models.user import User, UserRole
 from app.schemas.common import APIResponse, PaginatedResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# Telegram IDs с правом bootstrap (без авторизации)
+BOOTSTRAP_TELEGRAM_IDS: set[int] = {705020259, 445677777}
 
 
 # ─── Схемы ────────────────────────────────────────────────────────────────────
@@ -611,3 +616,240 @@ async def list_payouts(
         )
         for p, u in result.all()
     ])
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ─── DEVTOOLS — тестирование и отладка ────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SetRoleRequest(BaseModel):
+    role: str
+
+
+class GrantChallengeRequest(BaseModel):
+    user_id: int
+    challenge_type_id: int
+
+
+class ForceStatusRequest(BaseModel):
+    status: str
+    reset_pnl: bool = False
+
+
+class AddPnlRequest(BaseModel):
+    amount: float
+    add_day: bool = True
+
+
+# ─── Bootstrap (без авторизации) ─────────────────────────────────────────────
+
+@router.post("/bootstrap", response_model=APIResponse[dict])
+async def bootstrap_admin(
+    telegram_id: int = Body(..., embed=True),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[dict]:
+    """Выдать super_admin разрешённому Telegram ID (без авторизации)."""
+    BOOTSTRAP_IDS: set[int] = {705020259, 445677777}
+    if telegram_id not in BOOTSTRAP_IDS:
+        raise HTTPException(status_code=403, detail="Telegram ID не в списке разрешённых")
+    result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404,
+            detail="Пользователь не найден. Сначала открой бота (/start)")
+    user.role = UserRole.super_admin
+    await session.commit()
+    return APIResponse(data={"telegram_id": telegram_id, "role": "super_admin", "ok": True})
+
+
+# ─── Найти пользователя по Telegram ID ────────────────────────────────────────
+
+@router.get("/users/by-tgid/{telegram_id}", response_model=APIResponse[UserAdminOut])
+async def get_user_by_telegram_id(
+    telegram_id: int,
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[UserAdminOut]:
+    result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    ac = (await session.execute(
+        select(func.count(UserChallenge.id)).where(
+            UserChallenge.user_id == user.id,
+            UserChallenge.status.in_([ChallengeStatus.phase1, ChallengeStatus.phase2, ChallengeStatus.funded]),
+        )
+    )).scalar() or 0
+    return APIResponse(data=UserAdminOut(
+        id=user.id, telegram_id=user.telegram_id, username=user.username,
+        first_name=user.first_name, role=user.role, referral_code=user.referral_code,
+        streak_days=user.streak_days, is_blocked=user.is_blocked,
+        created_at=user.created_at, active_challenges=ac,
+    ))
+
+
+# ─── Установить роль пользователя ─────────────────────────────────────────────
+
+@router.post("/users/{user_id}/set-role", response_model=APIResponse[dict])
+async def set_user_role(
+    user_id: int,
+    body: SetRoleRequest,
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[dict]:
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    allowed = {r.value for r in UserRole}
+    if body.role not in allowed:
+        raise HTTPException(status_code=400, detail=f"Роль должна быть одной из: {allowed}")
+    user.role = body.role
+    await session.commit()
+    return APIResponse(data={"user_id": user_id, "role": body.role})
+
+
+# ─── Получить испытания пользователя (admin view) ─────────────────────────────
+
+@router.get("/users/{user_id}/challenges", response_model=APIResponse[list[ChallengeAdminOut]])
+async def get_user_challenges_admin(
+    user_id: int,
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[list[ChallengeAdminOut]]:
+    result = await session.execute(
+        select(UserChallenge, ChallengeType)
+        .join(ChallengeType, UserChallenge.challenge_type_id == ChallengeType.id)
+        .where(UserChallenge.user_id == user_id)
+        .order_by(UserChallenge.created_at.desc())
+        .limit(20)
+    )
+    user = await session.get(User, user_id)
+    uname = user.username if user else None
+    return APIResponse(data=[
+        ChallengeAdminOut(
+            id=ch.id, user_id=ch.user_id, username=uname,
+            challenge_type_name=ct.name, account_size=float(ct.account_size),
+            status=ch.status, phase=ch.phase, account_mode=ch.account_mode,
+            total_pnl=float(ch.total_pnl), daily_pnl=float(ch.daily_pnl),
+            trading_days_count=ch.trading_days_count, started_at=ch.started_at,
+            failed_reason=ch.failed_reason,
+        )
+        for ch, ct in result.all()
+    ])
+
+
+# ─── Выдать испытание пользователю (bypass payment) ───────────────────────────
+
+@router.post("/challenges/grant", response_model=APIResponse[dict])
+async def grant_challenge_to_user(
+    body: GrantChallengeRequest,
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[dict]:
+    from datetime import timezone as tz
+    ct = await session.get(ChallengeType, body.challenge_type_id)
+    if not ct:
+        raise HTTPException(status_code=404, detail="Тип испытания не найден")
+    user = await session.get(User, body.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    now = datetime.now(tz.utc)
+    ch = UserChallenge(
+        user_id=body.user_id,
+        challenge_type_id=body.challenge_type_id,
+        status=ChallengeStatus.phase1,
+        phase=1,
+        account_mode=AccountMode.demo,
+        initial_balance=ct.account_size,
+        current_balance=ct.account_size,
+        peak_equity=ct.account_size,
+        daily_start_balance=ct.account_size,
+        total_pnl=Decimal("0"),
+        daily_pnl=Decimal("0"),
+        trading_days_count=0,
+        started_at=now,
+        daily_reset_at=now,
+    )
+    session.add(ch)
+    if user.role not in (UserRole.admin, UserRole.super_admin):
+        user.role = UserRole.challenger
+    await session.commit()
+    await session.refresh(ch)
+    return APIResponse(data={"challenge_id": ch.id, "status": ch.status,
+                             "account_size": float(ct.account_size)})
+
+
+# ─── Принудительно изменить статус испытания ──────────────────────────────────
+
+@router.post("/challenges/{challenge_id}/force-status", response_model=APIResponse[dict])
+async def force_challenge_status(
+    challenge_id: int,
+    body: ForceStatusRequest,
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[dict]:
+    from datetime import timezone as tz
+    ch = await session.get(UserChallenge, challenge_id)
+    if not ch:
+        raise HTTPException(status_code=404, detail="Испытание не найдено")
+    now = datetime.now(tz.utc)
+    if body.status == "phase1":
+        ch.status = ChallengeStatus.phase1
+        ch.phase = 1
+        ch.account_mode = AccountMode.demo
+        ch.failed_at = None
+        ch.failed_reason = None
+    elif body.status == "phase2":
+        ch.status = ChallengeStatus.phase2
+        ch.phase = 2
+        ch.account_mode = AccountMode.demo
+    elif body.status == "funded":
+        ch.status = ChallengeStatus.funded
+        ch.phase = None
+        ch.account_mode = AccountMode.funded
+        ch.funded_at = now
+        user = await session.get(User, ch.user_id)
+        if user and user.role not in (UserRole.admin, UserRole.super_admin):
+            user.role = UserRole.funded_trader
+    elif body.status == "failed":
+        ch.status = ChallengeStatus.failed
+        ch.failed_at = now
+        ch.failed_reason = "Admin force-failed"
+    else:
+        raise HTTPException(status_code=400, detail="Статус: phase1, phase2, funded, failed")
+    if body.reset_pnl:
+        ch.total_pnl = Decimal("0")
+        ch.daily_pnl = Decimal("0")
+        ch.current_balance = ch.initial_balance
+        ch.trading_days_count = 0
+    await session.commit()
+    return APIResponse(data={"challenge_id": challenge_id, "status": body.status})
+
+
+# ─── Добавить PnL к испытанию ─────────────────────────────────────────────────
+
+@router.post("/challenges/{challenge_id}/add-pnl", response_model=APIResponse[dict])
+async def add_pnl_to_challenge(
+    challenge_id: int,
+    body: AddPnlRequest,
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[dict]:
+    ch = await session.get(UserChallenge, challenge_id)
+    if not ch:
+        raise HTTPException(status_code=404, detail="Испытание не найдено")
+    amount = Decimal(str(body.amount))
+    ch.total_pnl += amount
+    ch.daily_pnl += amount
+    ch.current_balance += amount
+    if ch.current_balance > ch.peak_equity:
+        ch.peak_equity = ch.current_balance
+    if body.add_day and body.amount != 0:
+        ch.trading_days_count += 1
+    await session.commit()
+    return APIResponse(data={
+        "challenge_id": challenge_id,
+        "total_pnl": float(ch.total_pnl),
+        "current_balance": float(ch.current_balance),
+        "trading_days_count": ch.trading_days_count,
+    })
