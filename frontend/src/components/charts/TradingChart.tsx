@@ -13,12 +13,18 @@ import { motion } from 'framer-motion'
 import type { KlineBar } from '@/api/client'
 
 const TIMEFRAMES = [
-  { label: '1m', value: '1' },
-  { label: '5m', value: '5' },
+  { label: '1m',  value: '1' },
+  { label: '3m',  value: '3' },
+  { label: '5m',  value: '5' },
   { label: '15m', value: '15' },
-  { label: '1h', value: '60' },
-  { label: '4h', value: '240' },
-  { label: '1D', value: 'D' },
+  { label: '30m', value: '30' },
+  { label: '1h',  value: '60' },
+  { label: '2h',  value: '120' },
+  { label: '4h',  value: '240' },
+  { label: '6h',  value: '360' },
+  { label: '12h', value: '720' },
+  { label: '1D',  value: 'D' },
+  { label: '1W',  value: 'W' },
 ]
 
 interface TradingChartProps {

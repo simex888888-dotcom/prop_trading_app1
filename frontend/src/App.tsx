@@ -59,21 +59,26 @@ function AppLayout() {
 
   return (
     <div className="flex flex-col h-dvh overflow-hidden bg-bg-primary">
-      <PageTransition>
-        <Routes location={location}>
-          <Route path="/onboarding" element={<OnboardingPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/terminal" element={<TerminalPage />} />
-          <Route path="/challenges" element={<ChallengesPage />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/rules" element={<RulesPage />} />
-          <Route path="/payouts" element={<PayoutsPage />} />
-          <Route path="/scaling" element={<ScalingPage />} />
-          <Route path="/admin" element={<AdminPage />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </PageTransition>
+      <div
+        className="flex-1 overflow-y-auto"
+        style={showTabBar ? { paddingBottom: "calc(64px + max(6px, env(safe-area-inset-bottom)))" } : {}}
+      >
+        <PageTransition>
+          <Routes location={location}>
+            <Route path="/onboarding" element={<OnboardingPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/terminal" element={<TerminalPage />} />
+            <Route path="/challenges" element={<ChallengesPage />} />
+            <Route path="/history" element={<HistoryPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/rules" element={<RulesPage />} />
+            <Route path="/payouts" element={<PayoutsPage />} />
+            <Route path="/scaling" element={<ScalingPage />} />
+            <Route path="/admin" element={<AdminPage />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </PageTransition>
+      </div>
       {showTabBar && <AnimatedTabBar />}
     </div>
   )

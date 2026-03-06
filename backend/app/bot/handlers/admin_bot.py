@@ -386,6 +386,157 @@ async def cmd_adm_activate(message: Message, session: AsyncSession) -> None:
         logger.warning(f"Could not notify trader: {e}")
 
 
+# ─── Удалить / сбросить испытание ──────────────────────────────────────────────
+
+@router.message(Command("adm_remove"))
+async def cmd_adm_remove(message: Message, session: AsyncSession) -> None:
+    """
+    Удалить испытание пользователя (перевести в статус failed).
+    Использование: /adm_remove <challenge_id>
+    """
+    if not _admin_only(message):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer(
+            "Использование: <code>/adm_remove &lt;challenge_id&gt;</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    challenge_id = int(parts[1])
+    result = await session.execute(
+        select(UserChallenge).where(UserChallenge.id == challenge_id)
+    )
+    challenge = result.scalar_one_or_none()
+    if not challenge:
+        await message.answer(f"❌ Испытание #{challenge_id} не найдено.")
+        return
+
+    old_status = challenge.status.value
+    challenge.status = ChallengeStatus.failed
+    challenge.failed_at = datetime.now(timezone.utc)
+    challenge.failed_reason = f"Removed by admin {message.from_user.id}"
+    await session.commit()
+
+    await message.answer(
+        f"✅ <b>Испытание #{challenge_id} удалено</b>\n"
+        f"Статус: {old_status} → <b>failed</b>",
+        parse_mode="HTML",
+        reply_markup=_back_to_menu_kb(),
+    )
+
+
+@router.message(Command("adm_setplan"))
+async def cmd_adm_setplan(message: Message, session: AsyncSession) -> None:
+    """
+    Поменять план пользователю (закрывает текущее + создаёт новое испытание).
+    Использование: /adm_setplan <tg_id> <account_size>
+    Пример: /adm_setplan 123456789 25000
+    """
+    if not _admin_only(message):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 3:
+        await message.answer(
+            "Использование: <code>/adm_setplan &lt;telegram_id&gt; &lt;размер_счёта&gt;</code>\n"
+            "Пример: <code>/adm_setplan 123456789 25000</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    tg_id_str, size_str = parts[1], parts[2]
+    if not tg_id_str.lstrip("-").isdigit() or not size_str.replace(".", "").isdigit():
+        await message.answer("❌ Неверный формат параметров.")
+        return
+
+    tg_id = int(tg_id_str)
+    account_size = float(size_str)
+
+    user_res = await session.execute(select(User).where(User.telegram_id == tg_id))
+    user = user_res.scalar_one_or_none()
+    if not user:
+        await message.answer(f"❌ Пользователь {tg_id} не найден.")
+        return
+
+    ct_result = await session.execute(
+        select(ChallengeType).where(
+            ChallengeType.account_size == account_size,
+            ChallengeType.is_active == True,
+        ).limit(1)
+    )
+    ct = ct_result.scalar_one_or_none()
+    if not ct:
+        available = await session.execute(
+            select(ChallengeType.account_size, ChallengeType.name)
+            .where(ChallengeType.is_active == True)
+            .order_by(ChallengeType.account_size)
+        )
+        sizes = ", ".join([f"${int(r[0]):,} ({r[1]})" for r in available.all()])
+        await message.answer(
+            f"❌ Тип испытания на ${account_size:,.0f} не найден.\n"
+            f"Доступные: {sizes or 'нет'}",
+            parse_mode="HTML",
+        )
+        return
+
+    # Закрыть текущее активное испытание (если есть)
+    active_res = await session.execute(
+        select(UserChallenge).where(
+            UserChallenge.user_id == user.id,
+            UserChallenge.status.in_([
+                ChallengeStatus.phase1,
+                ChallengeStatus.phase2,
+                ChallengeStatus.funded,
+                ChallengeStatus.pending_payment,
+            ]),
+        )
+    )
+    old_challenge = active_res.scalar_one_or_none()
+    if old_challenge:
+        old_challenge.status = ChallengeStatus.failed
+        old_challenge.failed_at = datetime.now(timezone.utc)
+        old_challenge.failed_reason = f"Plan changed by admin {message.from_user.id}"
+
+    # Создать новое испытание
+    from decimal import Decimal
+    now = datetime.now(timezone.utc)
+    challenge = UserChallenge(
+        user_id=user.id,
+        challenge_type_id=ct.id,
+        status=ChallengeStatus.phase1,
+        phase=1,
+        account_mode="demo",
+        exchange="bybit",
+        demo_account_id=f"MANUAL_{user.telegram_id}_{int(now.timestamp())}",
+        demo_api_key_enc="",
+        demo_api_secret_enc="",
+        initial_balance=Decimal(str(account_size)),
+        current_balance=Decimal(str(account_size)),
+        peak_equity=Decimal(str(account_size)),
+        daily_start_balance=Decimal(str(account_size)),
+        daily_pnl=Decimal("0"),
+        total_pnl=Decimal("0"),
+        trading_days_count=0,
+        started_at=now,
+        daily_reset_at=now,
+    )
+    session.add(challenge)
+    if user.role == UserRole.guest:
+        user.role = UserRole.challenger
+    await session.commit()
+
+    uname = f"@{user.username}" if user.username else user.first_name
+    await message.answer(
+        f"✅ <b>План изменён!</b>\n\n"
+        f"👤 {uname} (<code>{tg_id}</code>)\n"
+        f"📋 Новый план: <b>{ct.name}</b> — ${account_size:,.0f}\n"
+        f"{'🔄 Старое испытание закрыто' if old_challenge else ''}",
+        parse_mode="HTML",
+        reply_markup=_back_to_menu_kb(),
+    )
+
+
 # ─── Inline Callbacks ──────────────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("adm:"))
