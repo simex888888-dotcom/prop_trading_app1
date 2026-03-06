@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -159,18 +160,19 @@ async def purchase_challenge(
             detail="You already have an active challenge of this type",
         )
 
-    # Создаём demo аккаунт на Bybit
+    # Создаём demo суб-аккаунт на Bybit Demo Trading (api-demo.bybit.com)
     from app.services.exchange.bybit_master import BybitMasterClient
-    master = BybitMasterClient()
+    master = BybitMasterClient(mode="demo")
     try:
         demo_account = await master.setup_demo_challenge_account(
             account_size=ct.account_size,
             username_prefix=f"CHM{user.telegram_id}",
         )
     except Exception as e:
+        logger.error(f"Failed to create Bybit demo account for user {user.id}: {e}")
         raise HTTPException(
             status_code=503,
-            detail=f"Failed to create demo account: {str(e)}",
+            detail=f"Не удалось создать demo аккаунт: {str(e)}",
         )
     finally:
         await master.close()
