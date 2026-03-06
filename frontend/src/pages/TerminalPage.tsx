@@ -1,7 +1,7 @@
 /**
  * TerminalPage — мобильный торговый терминал с ордербуком и слайдером позиции.
  */
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { tradingApi, type Position, type Order, type Balance } from '@/api/client'
@@ -197,6 +197,7 @@ export function TerminalPage() {
   const queryClient = useQueryClient()
 
   const [timeframe, setTimeframe] = useState('60')
+  const [pairSearch, setPairSearch] = useState('')
   const [orderType, setOrderType] = useState<'Market' | 'Limit'>('Market')
   const [side, setSide] = useState<'Buy' | 'Sell'>('Buy')
   const [positionPct, setPositionPct] = useState(10)   // % от баланса
@@ -233,7 +234,14 @@ export function TerminalPage() {
   }, [activeChallengeId, accessToken])
 
   // ── Kline data ─────────────────────────────────────────────────────────────
-  const klineInterval = ['1', '5'].includes(timeframe) ? 2_000 : 5_000
+  // ── Filtered pairs for coin search ────────────────────────────────────────
+  const filteredPairs = useMemo(() => {
+    const q = pairSearch.trim().toUpperCase()
+    if (!q) return PAIRS
+    return PAIRS.filter((p) => p.replace('USDT', '').includes(q) || p.includes(q))
+  }, [pairSearch])
+
+  const klineInterval = ['1', '3'].includes(timeframe) ? 1_000 : ['5', '15'].includes(timeframe) ? 2_000 : 5_000
   const { data: klines = [] } = useQuery({
     queryKey: ['klines', selectedPair, timeframe],
     queryFn: () => tradingApi.getKline(selectedPair, timeframe),
@@ -365,23 +373,40 @@ export function TerminalPage() {
         </div>
       </div>
 
-      {/* Pair selector */}
-      <div className="px-4 pt-2 pb-1 overflow-x-auto">
-        <div className="flex gap-1.5" style={{ width: 'max-content' }}>
-          {PAIRS.map((p) => (
-            <button
-              key={p}
-              onClick={() => setSelectedPair(p)}
-              className="px-3 py-1 rounded-lg text-xs font-semibold transition-all shrink-0"
-              style={{
-                background: selectedPair === p ? '#6C63FF' : '#1A1A2E',
-                color: selectedPair === p ? '#fff' : '#4A4A6A',
-                border: `1px solid ${selectedPair === p ? '#6C63FF' : '#1E1E2E'}`,
-              }}
-            >
-              {p.replace('USDT', '')}
-            </button>
-          ))}
+      {/* Coin search + pair selector */}
+      <div className="px-4 pt-2 pb-1">
+        <input
+          type="text"
+          value={pairSearch}
+          onChange={(e) => setPairSearch(e.target.value)}
+          placeholder="Поиск монеты (BTC, ETH...)"
+          className="w-full rounded-xl px-3 py-2 text-sm text-white mb-2"
+          style={{
+            background: '#1A1A2E',
+            border: '1px solid rgba(255,255,255,0.08)',
+            outline: 'none',
+          }}
+        />
+        <div className="overflow-x-auto">
+          <div className="flex gap-1.5" style={{ width: 'max-content' }}>
+            {filteredPairs.map((p) => (
+              <button
+                key={p}
+                onClick={() => { setSelectedPair(p); setPairSearch('') }}
+                className="px-3 py-1 rounded-lg text-xs font-semibold transition-all shrink-0"
+                style={{
+                  background: selectedPair === p ? '#6C63FF' : '#1A1A2E',
+                  color: selectedPair === p ? '#fff' : '#4A4A6A',
+                  border: `1px solid ${selectedPair === p ? '#6C63FF' : '#1E1E2E'}`,
+                }}
+              >
+                {p.replace('USDT', '')}
+              </button>
+            ))}
+            {filteredPairs.length === 0 && (
+              <span className="text-text-muted text-xs px-2 py-1">Не найдено</span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -512,21 +537,19 @@ export function TerminalPage() {
               </button>
             ))}
           </div>
-          {/* Qty display */}
-          {qty && currentPrice > 0 && (
-            <div className="mt-1.5 flex items-center gap-2">
-              <span className="text-text-muted text-xs">Кол-во:</span>
-              <input
-                type="number"
-                value={qty}
-                onChange={(e) => setQty(e.target.value)}
-                inputMode="decimal"
-                className="flex-1 bg-bg-border border border-bg-border rounded-lg px-3 py-1.5 text-white text-xs num focus:outline-none"
-                placeholder="Кол-во монет"
-              />
-              <span className="text-text-muted text-xs">{selectedPair.replace('USDT', '')}</span>
-            </div>
-          )}
+          {/* Qty display — always visible */}
+          <div className="mt-1.5 flex items-center gap-2">
+            <span className="text-text-muted text-xs shrink-0">Кол-во:</span>
+            <input
+              type="number"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              inputMode="decimal"
+              className="flex-1 bg-bg-border border border-bg-border rounded-lg px-3 py-1.5 text-white text-xs num focus:outline-none"
+              placeholder={currentPrice > 0 ? '0.000' : 'Загрузка...'}
+            />
+            <span className="text-text-muted text-xs shrink-0">{selectedPair.replace('USDT', '')}</span>
+          </div>
         </div>
 
         {/* Leverage slider */}
