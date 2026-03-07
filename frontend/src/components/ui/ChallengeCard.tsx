@@ -3,6 +3,7 @@
  */
 import { motion } from 'framer-motion'
 import type { ChallengeType } from '@/api/client'
+import { AtomIcon, TestTubeIcon, FlaskIcon, MicroscopeIcon, DiamondIcon, NucleusIcon, TargetIcon, ZapIcon, CheckCircleIcon } from '@/components/ui/Icon'
 
 interface ChallengeCardProps {
   challenge: ChallengeType
@@ -10,17 +11,17 @@ interface ChallengeCardProps {
   onSelect: () => void
 }
 
-const RANK_ICONS: Record<string, string> = {
-  'Isotope $5K': '⚛️',
-  'Reagent $10K': '🧪',
-  'Catalyst $25K': '⚗️',
-  'Molecule $50K': '🔬',
-  'Crystal $100K': '💎',
-  'Nucleus $200K': '☢️',
+const RANK_ICONS: Record<string, JSX.Element> = {
+  'Isotope $5K': <AtomIcon size={40} color="#A855F7" />,
+  'Reagent $10K': <TestTubeIcon size={40} color="#3B82F6" />,
+  'Catalyst $25K': <FlaskIcon size={40} color="#F59E0B" />,
+  'Molecule $50K': <MicroscopeIcon size={40} color="#10B981" />,
+  'Crystal $100K': <DiamondIcon size={40} color="#00D4AA" />,
+  'Nucleus $200K': <NucleusIcon size={40} color="#FF4757" />,
 }
 
 export function ChallengeCard({ challenge, isSelected, onSelect }: ChallengeCardProps) {
-  const icon = RANK_ICONS[challenge.name] ?? '🎯'
+  const icon = RANK_ICONS[challenge.name] ?? <TargetIcon size={40} color="#6C63FF" />
   const sizeLabel = challenge.account_size >= 1000
     ? `$${(challenge.account_size / 1000).toFixed(0)}K`
     : `$${challenge.account_size}`
@@ -48,11 +49,11 @@ export function ChallengeCard({ challenge, isSelected, onSelect }: ChallengeCard
       <div className="relative p-5 flex flex-col h-full gap-3">
         {/* Icon + Size */}
         <div className="flex items-start justify-between">
-          <span className="text-4xl">{icon}</span>
+          <span className="flex items-center">{icon}</span>
           <div className="text-right">
             {challenge.is_instant && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-warning/20 text-warning border border-warning/30">
-                ⚡ Instant
+              <span className="text-xs px-2 py-0.5 rounded-full bg-warning/20 text-warning border border-warning/30 flex items-center gap-1">
+                <ZapIcon size={11} color="currentColor" /> Instant
               </span>
             )}
             {challenge.is_refundable && (
@@ -101,7 +102,7 @@ export function ChallengeCard({ challenge, isSelected, onSelect }: ChallengeCard
           }}
           whileTap={{ scale: 0.97 }}
         >
-          {isSelected ? '✓ Выбрано' : 'Выбрать путь'}
+          {isSelected ? <span className="flex items-center justify-center gap-1"><CheckCircleIcon size={14} color="#fff" /> Выбрано</span> : 'Выбрать путь'}
         </motion.button>
       </div>
     </motion.div>

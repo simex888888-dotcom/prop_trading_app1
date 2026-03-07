@@ -5,6 +5,7 @@ import { useState, useCallback } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { statsApi, tradingApi, type TradeHistory } from '@/api/client'
+import { ClipboardIcon, TrendUpIcon, TrendDownIcon } from '@/components/ui/Icon'
 import { useAppStore } from '@/store/appStore'
 import { EquitySparkline } from '@/components/charts/EquitySparkline'
 import { PnLNumber } from '@/components/ui/PnLNumber'
@@ -59,7 +60,7 @@ export function HistoryPage() {
   if (!activeChallengeId) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-8 text-center">
-        <span className="text-5xl">📋</span>
+        <ClipboardIcon size={56} color="#6C63FF" />
         <h2 className="text-xl font-bold text-white">Нет активного испытания</h2>
         <p className="text-text-secondary">История пуста</p>
       </div>
@@ -117,7 +118,7 @@ export function HistoryPage() {
               }}
               onClick={() => setFilterSide(f)}
             >
-              {f === 'All' ? 'Все' : f === 'Buy' ? '🟢 Лонг' : '🔴 Шорт'}
+              {f === 'All' ? 'Все' : f === 'Buy' ? <span className="flex items-center justify-center gap-1"><TrendUpIcon size={12} color="#00D4AA" /> Лонг</span> : <span className="flex items-center justify-center gap-1"><TrendDownIcon size={12} color="#FF4757" /> Шорт</span>}
             </button>
           ))}
         </div>

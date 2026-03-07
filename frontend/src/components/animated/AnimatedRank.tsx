@@ -3,6 +3,7 @@
  * Isotope → Reagent → Catalyst → Molecule → Crystal → Nucleus → Krypton
  */
 import { useEffect, useRef, useState } from 'react'
+import { AtomIcon, TestTubeIcon, FlaskIcon, MicroscopeIcon, DiamondIcon, NucleusIcon, ZapIcon, StarIcon } from '@/components/ui/Icon'
 
 export type RankName = 'isotope' | 'reagent' | 'catalyst' | 'molecule' | 'crystal' | 'nucleus' | 'krypton'
 
@@ -26,14 +27,14 @@ const RANK_COLORS: Record<RankName, string> = {
   krypton: '#FFD700',
 }
 
-const RANK_EMOJI: Record<RankName, string> = {
-  isotope: '⚛️',
-  reagent: '🧪',
-  catalyst: '⚗️',
-  molecule: '🔬',
-  crystal: '💎',
-  nucleus: '⚡',
-  krypton: '🌟',
+const RANK_ICON_MAP: Record<RankName, (size: number, color: string) => JSX.Element> = {
+  isotope: (s, c) => <AtomIcon size={s} color={c} />,
+  reagent: (s, c) => <TestTubeIcon size={s} color={c} />,
+  catalyst: (s, c) => <FlaskIcon size={s} color={c} />,
+  molecule: (s, c) => <MicroscopeIcon size={s} color={c} />,
+  crystal: (s, c) => <DiamondIcon size={s} color={c} />,
+  nucleus: (s, c) => <NucleusIcon size={s} color={c} />,
+  krypton: (s, c) => <StarIcon size={s} color={c} />,
 }
 
 interface AnimatedRankProps {
@@ -60,7 +61,7 @@ export function AnimatedRank({ rank, size = 64, showLabel = true, className = ''
 
   const color = RANK_COLORS[rank]
   const label = RANK_LABELS[rank]
-  const emoji = RANK_EMOJI[rank]
+  const rankIconFn = RANK_ICON_MAP[rank]
   const showFallback = reducedMotion || videoFailed
 
   return (
@@ -76,16 +77,15 @@ export function AnimatedRank({ rank, size = 64, showLabel = true, className = ''
       >
         {showFallback ? (
           <div
-            className="rounded-full flex items-center justify-center font-bold"
+            className="rounded-full flex items-center justify-center"
             style={{
               width: size * 0.75,
               height: size * 0.75,
               background: `linear-gradient(135deg, ${color}40, ${color}10)`,
               border: `2px solid ${color}60`,
-              fontSize: size * 0.38,
             }}
           >
-            {emoji}
+            {rankIconFn(Math.round(size * 0.42), color)}
           </div>
         ) : (
           <video

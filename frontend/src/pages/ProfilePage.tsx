@@ -11,6 +11,7 @@ import { AchievementBadge } from '@/components/animated/AchievementBadge'
 import { AnimatedRank, getRankByStats } from '@/components/animated/AnimatedRank'
 import { CardSkeleton } from '@/components/ui/LoadingSkeleton'
 import { BottomSheet } from '@/components/ui/BottomSheet'
+import { TrophyIcon, BarChartIcon, UsersIcon } from '@/components/ui/Icon'
 
 type ProfileTab = 'achievements' | 'leaderboard' | 'referral'
 
@@ -101,9 +102,11 @@ export function ProfilePage() {
             }}
             onClick={() => setActiveTab(tab)}
           >
-            {tab === 'achievements' ? '🏆 Достижения'
-              : tab === 'leaderboard' ? '📊 Рейтинг'
-              : '👥 Рефералы'}
+            {tab === 'achievements'
+              ? <span className="flex items-center justify-center gap-1"><TrophyIcon size={12} color="currentColor" /> Достижения</span>
+              : tab === 'leaderboard'
+              ? <span className="flex items-center justify-center gap-1"><BarChartIcon size={12} color="currentColor" /> Рейтинг</span>
+              : <span className="flex items-center justify-center gap-1"><UsersIcon size={12} color="currentColor" /> Рефералы</span>}
           </button>
         ))}
       </div>

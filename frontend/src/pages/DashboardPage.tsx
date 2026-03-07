@@ -1,7 +1,7 @@
 /**
  * DashboardPage — главный дашборд CHM_KRYPTON.
  */
-import { useState } from 'react'
+import { ReactNode, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
@@ -13,6 +13,10 @@ import { BottomSheet } from '@/components/ui/BottomSheet'
 import { EquitySparkline } from '@/components/charts/EquitySparkline'
 import { AnimatedRank, getRankByStats } from '@/components/animated/AnimatedRank'
 import { useAppStore } from '@/store/appStore'
+import {
+  FireIcon, ZapIcon, ClipboardIcon, DollarIcon, TrophyIcon,
+  ClockIcon, KeyIcon, AlertIcon, SimIcon,
+} from '@/components/ui/Icon'
 
 function ModeBadge({ mode, hasChallengeActive }: { mode?: string; hasChallengeActive?: boolean }) {
   const isFunded = mode === 'funded'
@@ -82,7 +86,6 @@ export function DashboardPage() {
       setAccountDetails(details)
       setShowAccountDetails(true)
     } catch (e) {
-      // silently ignore — user will see empty state
       setShowAccountDetails(true)
     } finally {
       setLoadingDetails(false)
@@ -163,12 +166,10 @@ export function DashboardPage() {
           )}
         </div>
 
-        {/* Equity sparkline */}
         {equityCurve.length > 0 && (
           <EquitySparkline data={equityCurve} height={64} />
         )}
 
-        {/* Profit progress */}
         {d?.active_challenge_id && (
           <ProgressBar
             value={d.profit_progress_pct}
@@ -211,13 +212,7 @@ export function DashboardPage() {
       {/* Streak */}
       <motion.div variants={item} className="glass-card p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <motion.div
-            animate={{ scale: [1, 1.15, 1] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-            className="text-2xl"
-          >
-            🔥
-          </motion.div>
+          <FireIcon size={32} />
           <div>
             <p className="text-white font-semibold">Streak без нарушений</p>
             <p className="text-text-muted text-xs">Удерживай серию</p>
@@ -230,13 +225,15 @@ export function DashboardPage() {
 
       {/* Quick actions */}
       <motion.div variants={item} className="grid grid-cols-2 gap-3">
-        <QuickAction icon="⚡" label="Торговать" onClick={() => navigate('/terminal')} color="#6C63FF" />
-        <QuickAction icon="📋" label="Правила" onClick={() => navigate('/rules')} color="#00D4AA" />
-        <QuickAction icon="💰" label="Выплаты" onClick={() => navigate('/payouts')} color="#FFA502" />
-        <QuickAction icon="🏆" label="Рейтинг" onClick={() => navigate('/profile')} color="#FFD700" />
+        <QuickAction icon={<ZapIcon size={20} color="#6C63FF" />} label="Торговать" onClick={() => navigate('/terminal')} color="#6C63FF" />
+        <QuickAction icon={<ClipboardIcon size={20} color="#00D4AA" />} label="Правила" onClick={() => navigate('/rules')} color="#00D4AA" />
+        <QuickAction icon={<DollarIcon size={20} color="#FFA502" />} label="Выплаты" onClick={() => navigate('/payouts')} color="#FFA502" />
+        <QuickAction icon={<TrophyIcon size={20} color="#FFD700" />} label="Рейтинг" onClick={() => navigate('/profile')} color="#FFD700" />
         {d?.active_challenge_id && (
           <QuickAction
-            icon={loadingDetails ? '⏳' : '🔑'}
+            icon={loadingDetails
+              ? <ClockIcon size={20} color="#00B8FF" />
+              : <KeyIcon size={20} color="#00B8FF" />}
             label="Bybit аккаунт"
             onClick={handleShowAccountDetails}
             color="#00B8FF"
@@ -250,7 +247,9 @@ export function DashboardPage() {
           variants={item}
           className="glass-card p-6 text-center space-y-3"
         >
-          <div className="text-4xl">⚛️</div>
+          <div className="flex justify-center mb-2">
+            <SimIcon size={56} color="#6C63FF" />
+          </div>
           <p className="text-white font-semibold">Начни своё испытание</p>
           <p className="text-text-secondary text-sm">
             Выбери размер счёта и начни путь трейдера
@@ -280,14 +279,14 @@ export function DashboardPage() {
                 Вы можете торговать прямо в приложении или подключить аккаунт в Bybit по API ключу.
               </p>
 
-              {/* Trade in app */}
               <motion.button
-                className="w-full py-4 rounded-2xl font-bold text-white"
+                className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2"
                 style={{ background: 'linear-gradient(135deg, #6C63FF, #00D4AA)' }}
                 onClick={() => { setShowAccountDetails(false); navigate('/terminal') }}
                 whileTap={{ scale: 0.97 }}
               >
-                ⚡ Торговать в приложении
+                <ZapIcon size={18} color="#fff" />
+                Торговать в приложении
               </motion.button>
 
               <div className="relative flex items-center">
@@ -296,7 +295,6 @@ export function DashboardPage() {
                 <div className="flex-1 border-t border-bg-border" />
               </div>
 
-              {/* Credentials */}
               {[
                 { label: 'Bybit UID', value: accountDetails.bybit_uid, field: 'uid' },
                 { label: 'Sub-account username', value: accountDetails.username || '—', field: 'username' },
@@ -325,8 +323,9 @@ export function DashboardPage() {
                 </div>
               ))}
 
-              <p className="text-xs text-text-muted text-center">
-                ⚠️ API Secret доступен только в момент создания субаккаунта. Торговля через приложение не требует API ключей.
+              <p className="text-xs text-text-muted text-center flex items-center justify-center gap-1">
+                <AlertIcon size={12} color="#FFA502" />
+                API Secret доступен только в момент создания субаккаунта. Торговля через приложение не требует API ключей.
               </p>
             </>
           ) : (
@@ -336,12 +335,13 @@ export function DashboardPage() {
                 Возможно, аккаунт был создан вручную администратором
               </p>
               <motion.button
-                className="mt-4 w-full py-4 rounded-2xl font-bold text-white"
+                className="mt-4 w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2"
                 style={{ background: 'linear-gradient(135deg, #6C63FF, #00D4AA)' }}
                 onClick={() => { setShowAccountDetails(false); navigate('/terminal') }}
                 whileTap={{ scale: 0.97 }}
               >
-                ⚡ Торговать в приложении
+                <ZapIcon size={18} color="#fff" />
+                Торговать в приложении
               </motion.button>
             </div>
           )}
@@ -352,7 +352,7 @@ export function DashboardPage() {
 }
 
 function QuickAction({ icon, label, onClick, color }: {
-  icon: string; label: string; onClick: () => void; color: string
+  icon: ReactNode; label: string; onClick: () => void; color: string
 }) {
   return (
     <motion.button
@@ -361,7 +361,7 @@ function QuickAction({ icon, label, onClick, color }: {
       whileTap={{ scale: 0.95 }}
     >
       <span
-        className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
+        className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
         style={{ background: `${color}15`, border: `1px solid ${color}30` }}
       >
         {icon}

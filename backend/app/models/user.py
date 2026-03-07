@@ -58,6 +58,9 @@ class User(Base, TimestampMixin):
     referrals_received: Mapped[list["Referral"]] = relationship(
         "Referral", foreign_keys="Referral.referred_id", back_populates="referred"
     )
+    paper_positions: Mapped[list["PaperPosition"]] = relationship(
+        "PaperPosition", back_populates="user", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("ix_users_telegram_id", "telegram_id"),

@@ -202,11 +202,15 @@ export function TradeForm({ balance, prices, onSuccess, hapticFeedback }) {
       <div className="input-group">
         <label className="input-label">Направление</label>
         <div className="segment-control">
-          <button type="button" className={`segment-btn ${isLong ? "active green" : ""}`} onClick={() => setDirection("LONG")}>
-            📈 LONG
+          <button type="button" className={`segment-btn ${isLong ? "active green" : ""}`} onClick={() => setDirection("LONG")}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+            LONG
           </button>
-          <button type="button" className={`segment-btn ${!isLong ? "active red" : ""}`} onClick={() => setDirection("SHORT")}>
-            📉 SHORT
+          <button type="button" className={`segment-btn ${!isLong ? "active red" : ""}`} onClick={() => setDirection("SHORT")}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+            SHORT
           </button>
         </div>
       </div>
@@ -335,7 +339,10 @@ export function TradeForm({ balance, prices, onSuccess, hapticFeedback }) {
         {sizeMode === "risk" ? (
           <div className="card">
             <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 12 }}>
-              🧮 КАЛЬКУЛЯТОР РИСКА
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>
+                КАЛЬКУЛЯТОР РИСКА
+              </span>
             </h3>
             <RiskCalculator
               balance={balance}
@@ -383,7 +390,10 @@ export function TradeForm({ balance, prices, onSuccess, hapticFeedback }) {
           color: "var(--accent-red)",
           fontSize: 13,
         }}>
-          ⚠️ {error}
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            {error}
+          </span>
         </div>
       )}
 
@@ -399,7 +409,12 @@ export function TradeForm({ balance, prices, onSuccess, hapticFeedback }) {
         {loading ? (
           <span className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
         ) : (
-          `${isLong ? "📈 Открыть LONG" : "📉 Открыть SHORT"} · ${leverage}x`
+          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            {isLong
+              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>}
+            {isLong ? "Открыть LONG" : "Открыть SHORT"} · {leverage}x
+          </span>
         )}
       </button>
     </form>

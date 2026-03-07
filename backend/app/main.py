@@ -115,6 +115,7 @@ from app.api.routes import (
     auth,
     challenges,
     leaderboard,
+    paper_trading,
     payouts,
     referral,
     stats,
@@ -132,6 +133,7 @@ app.include_router(achievements.router, prefix=API_PREFIX)
 app.include_router(leaderboard.router, prefix=API_PREFIX)
 app.include_router(referral.router, prefix=API_PREFIX)
 app.include_router(admin.router, prefix=API_PREFIX)
+app.include_router(paper_trading.router, prefix=API_PREFIX)
 
 
 # ─── Health check ─────────────────────────────────────────────────────────────

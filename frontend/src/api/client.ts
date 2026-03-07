@@ -168,6 +168,16 @@ export const leaderboardApi = {
   getAlltime: (limit = 100) => get<LeaderboardEntry[]>('/leaderboard/alltime', { limit }),
 }
 
+// ── Paper Trading ─────────────────────────────────────────────────────────────
+export const paperApi = {
+  getBalance: () => get<PaperBalance>('/paper/balance'),
+  getPositions: (closed = false) => get<PaperPosition[]>('/paper/positions', { closed }),
+  placeOrder: (order: { symbol: string; side: 'Buy' | 'Sell'; qty: string; leverage?: number; stop_loss?: string; take_profit?: string }) =>
+    post<PaperPosition>('/paper/order', order),
+  closePosition: (positionId: number) => post<PaperPosition>(`/paper/close/${positionId}`),
+  reset: () => del<{ reset: boolean; new_balance: number }>('/paper/reset'),
+}
+
 // ── Referral ──────────────────────────────────────────────────────────────────
 export const referralApi = {
   info: () => get<ReferralInfo>('/referral/info'),
@@ -475,4 +485,32 @@ export interface PaginatedResponse<T> {
   next_cursor?: string
   has_more: boolean
   total?: number
+}
+
+// ── Paper Trading Types ───────────────────────────────────────────────────────
+export interface PaperPosition {
+  id: number
+  symbol: string
+  side: 'Buy' | 'Sell'
+  qty: number
+  entry_price: number
+  leverage: number
+  take_profit?: number
+  stop_loss?: number
+  exit_price?: number
+  pnl?: number
+  pnl_pct?: number
+  is_closed: boolean
+  margin_used: number
+  opened_at: string
+  closed_at?: string
+  unrealized_pnl?: number
+}
+
+export interface PaperBalance {
+  balance: number
+  equity: number
+  unrealized_pnl: number
+  margin_used: number
+  available: number
 }
