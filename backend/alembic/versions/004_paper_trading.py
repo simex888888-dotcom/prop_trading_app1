@@ -1,14 +1,14 @@
 """004 paper trading
 
 Revision ID: 004_paper_trading
-Revises: 003_add_pending_payment_and_username
+Revises: 003_pending_payment
 Create Date: 2026-03-07 00:00:00
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "004_paper_trading"
-down_revision = "003_add_pending_payment_and_username"
+down_revision = "003_pending_payment"
 branch_labels = None
 depends_on = None
 
