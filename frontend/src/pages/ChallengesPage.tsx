@@ -11,6 +11,7 @@ import { BottomSheet } from '@/components/ui/BottomSheet'
 import { CardSkeleton } from '@/components/ui/LoadingSkeleton'
 import { useAppStore } from '@/store/appStore'
 import { useNavigate } from 'react-router-dom'
+import { ClockIcon, CreditCardIcon, ClipboardIcon, AnimatedCheckIcon, SpinnerIcon } from '@/components/ui/Icon'
 
 export function ChallengesPage() {
   const [selected, setSelected] = useState<ChallengeType | null>(null)
@@ -97,8 +98,9 @@ export function ChallengesPage() {
           className="mx-4 glass-card p-4 space-y-1"
           style={{ border: '1px solid rgba(255,180,0,0.35)', background: 'rgba(255,180,0,0.05)' }}
         >
-          <p className="text-xs font-semibold" style={{ color: '#FFB400' }}>
-            ⏳ Ожидание подтверждения оплаты
+          <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: '#FFB400' }}>
+            <ClockIcon size={12} color="#FFB400" />
+            Ожидание подтверждения оплаты
           </p>
           <p className="text-sm text-text-secondary">
             Заявка #{pendingChallenge.id} на рассмотрении.{' '}
@@ -197,8 +199,9 @@ export function ChallengesPage() {
               className="rounded-2xl p-4 space-y-2"
               style={{ background: 'rgba(108,99,255,0.08)', border: '1px solid rgba(108,99,255,0.25)' }}
             >
-              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
-                💳 Оплата — USDT BEP20
+              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                <CreditCardIcon size={13} color="#a89fff" />
+                Оплата — USDT BEP20
               </p>
               <p className="text-xs text-text-muted">
                 Переведите <span className="text-white font-bold num">${selected.price} USDT</span> на кошелёк:
@@ -225,13 +228,16 @@ export function ChallengesPage() {
 
             {/* How it works */}
             <div className="space-y-1.5">
-              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">📋 Как это работает</p>
-              <p className="text-sm text-text-secondary">1️⃣ Переведите ${selected.price} USDT на кошелёк выше</p>
-              <p className="text-sm text-text-secondary">2️⃣ Нажмите кнопку ниже — заявка создана</p>
-              <p className="text-sm text-text-secondary">
-                3️⃣ Отправьте скриншот в бот <span className="text-white font-semibold">@{botUsername}</span>
+              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                <ClipboardIcon size={13} color="#888" />
+                Как это работает
               </p>
-              <p className="text-sm text-text-secondary">4️⃣ Администратор активирует испытание после проверки</p>
+              <p className="text-sm text-text-secondary">1. Переведите ${selected.price} USDT на кошелёк выше</p>
+              <p className="text-sm text-text-secondary">2. Нажмите кнопку ниже — заявка создана</p>
+              <p className="text-sm text-text-secondary">
+                3. Отправьте скриншот в бот <span className="text-white font-semibold">@{botUsername}</span>
+              </p>
+              <p className="text-sm text-text-secondary">4. Администратор активирует испытание после проверки</p>
             </div>
 
             <motion.button
@@ -243,15 +249,14 @@ export function ChallengesPage() {
             >
               {purchaseMutation.isPending ? (
                 <span className="flex items-center justify-center gap-2">
-                  <motion.div
-                    className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-                  />
+                  <SpinnerIcon size={18} color="#fff" />
                   Создаём заявку...
                 </span>
               ) : (
-                `✅ Я оплатил — создать заявку $${selected.price}`
+                <span className="flex items-center justify-center gap-2">
+                  <AnimatedCheckIcon size={20} color="#fff" />
+                  Я оплатил — создать заявку ${selected.price}
+                </span>
               )}
             </motion.button>
 
@@ -270,7 +275,9 @@ export function ChallengesPage() {
       >
         <div className="p-5 space-y-4">
           <div className="text-center">
-            <div className="text-5xl mb-3">⏳</div>
+            <div className="flex justify-center mb-3">
+              <ClockIcon size={56} color="#6C63FF" />
+            </div>
             <h3 className="text-lg font-bold text-white">Ожидаем подтверждения</h3>
             <p className="text-text-secondary text-sm mt-2">
               Заявка принята. Отправьте скриншот оплаты в бот — администраторы активируют испытание после проверки транзакции.

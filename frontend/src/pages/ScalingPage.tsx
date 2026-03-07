@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import { challengesApi } from '@/api/client'
 import { useAppStore } from '@/store/appStore'
 import { CardSkeleton } from '@/components/ui/LoadingSkeleton'
+import { TrendUpIcon } from '@/components/ui/Icon'
 
 const SCALING_STEPS = [
   { step: 1, label: 'Старт', multiplier: 1, profit_pct: 0, color: '#6C63FF' },
@@ -36,7 +37,7 @@ export function ScalingPage() {
   if (!activeChallengeId) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-8 text-center">
-        <span className="text-5xl">📈</span>
+        <TrendUpIcon size={56} color="#6C63FF" />
         <h2 className="text-xl font-bold text-white">Нет активного испытания</h2>
         <p className="text-text-secondary">Только Funded трейдеры могут масштабировать счёт</p>
       </div>

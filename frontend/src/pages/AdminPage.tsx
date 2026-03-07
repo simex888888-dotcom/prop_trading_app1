@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { apiClient } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
+import { LockIcon, SettingsIcon, UsersIcon, BarChartIcon, TargetIcon, ZapIcon, DiamondIcon, ClockIcon, AlertIcon, CheckCircleIcon } from '@/components/ui/Icon'
 
 type AdminTab = 'overview' | 'users' | 'challenges' | 'payouts'
 
@@ -90,7 +91,7 @@ export function AdminPage() {
   if (role !== 'admin' && role !== 'super_admin') {
     return (
       <div className="flex flex-col items-center justify-center min-h-dvh gap-4 px-8 text-center bg-bg-primary">
-        <span className="text-6xl">🔒</span>
+        <LockIcon size={64} color="#FF4757" />
         <h2 className="text-2xl font-bold text-white">Доступ запрещён</h2>
         <p className="text-text-secondary">Только администраторы могут открыть эту страницу.</p>
       </div>
@@ -102,7 +103,7 @@ export function AdminPage() {
       {/* Header */}
       <div className="px-6 pt-6 pb-4 border-b border-bg-border">
         <div className="flex items-center gap-3">
-          <span className="text-2xl">⚙️</span>
+          <SettingsIcon size={28} color="#6C63FF" />
           <div>
             <h1 className="text-xl font-bold text-white">CHM_KRYPTON Admin</h1>
             <p className="text-text-muted text-xs">{role === 'super_admin' ? 'Super Admin' : 'Admin'}</p>
@@ -122,10 +123,10 @@ export function AdminPage() {
             }}
             onClick={() => setTab(t)}
           >
-            {t === 'overview' ? '📊 Обзор'
-              : t === 'users' ? '👥 Пользователи'
-              : t === 'challenges' ? '🎯 Испытания'
-              : '💰 Выплаты'}
+            {t === 'overview' ? <span className="flex items-center justify-center gap-1"><BarChartIcon size={12} /> Обзор</span>
+              : t === 'users' ? <span className="flex items-center justify-center gap-1"><UsersIcon size={12} /> Польз.</span>
+              : t === 'challenges' ? <span className="flex items-center justify-center gap-1"><TargetIcon size={12} /> Испыт.</span>
+              : <span className="flex items-center justify-center gap-1"><DiamondIcon size={12} /> Выплаты</span>}
           </button>
         ))}
       </div>
@@ -153,12 +154,12 @@ function OverviewTab() {
   if (!data) return null
 
   const stats = [
-    { label: 'Пользователей', value: data.total_users, icon: '👥', color: '#6C63FF' },
-    { label: 'Активных сегодня', value: data.active_users_today, icon: '🟢', color: '#00D4AA' },
-    { label: 'Всего испытаний', value: data.total_challenges, icon: '🎯', color: '#FFA502' },
-    { label: 'Активных испытаний', value: data.active_challenges, icon: '⚡', color: '#FFA502' },
-    { label: 'Funded аккаунтов', value: data.funded_accounts, icon: '💎', color: '#00D4AA' },
-    { label: 'Выплат на рассмотрении', value: data.pending_payouts, icon: '⏳', color: '#FF4757' },
+    { label: 'Пользователей', value: data.total_users, icon: <UsersIcon size={16} color="#6C63FF" />, color: '#6C63FF' },
+    { label: 'Активных сегодня', value: data.active_users_today, icon: <CheckCircleIcon size={16} color="#00D4AA" />, color: '#00D4AA' },
+    { label: 'Всего испытаний', value: data.total_challenges, icon: <TargetIcon size={16} color="#FFA502" />, color: '#FFA502' },
+    { label: 'Активных испытаний', value: data.active_challenges, icon: <ZapIcon size={16} color="#FFA502" />, color: '#FFA502' },
+    { label: 'Funded аккаунтов', value: data.funded_accounts, icon: <DiamondIcon size={16} color="#00D4AA" />, color: '#00D4AA' },
+    { label: 'Выплат на рассмотрении', value: data.pending_payouts, icon: <ClockIcon size={16} color="#FF4757" />, color: '#FF4757' },
   ]
 
   return (
@@ -252,7 +253,7 @@ function UsersTab() {
                     </p>
                     <RoleBadge role={user.role} />
                     {user.is_blocked && (
-                      <span className="text-xs text-loss">🚫 Заблокирован</span>
+                      <span className="text-xs text-loss flex items-center gap-1"><LockIcon size={11} color="#FF4757" /> Заблокирован</span>
                     )}
                   </div>
                   <p className="text-xs text-text-muted num">
@@ -359,7 +360,7 @@ function ChallengesTab() {
                   · {ch.account_mode} · {ch.trading_days_count}д
                 </p>
                 {ch.failed_reason && (
-                  <p className="text-xs text-loss mt-1">⚠️ {ch.failed_reason}</p>
+                  <p className="text-xs text-loss mt-1 flex items-center gap-1"><AlertIcon size={12} color="#FF4757" /> {ch.failed_reason}</p>
                 )}
               </div>
             ))}
@@ -444,7 +445,7 @@ function PayoutsTab() {
                     onClick={() => approveMutation.mutate(p.id)}
                     disabled={approveMutation.isPending}
                   >
-                    ✓ Одобрить
+                    <span className="flex items-center justify-center gap-1"><CheckCircleIcon size={14} color="#00D4AA" /> Одобрить</span>
                   </button>
                   <button
                     className="flex-1 py-1.5 rounded-lg text-xs font-bold"
@@ -452,14 +453,14 @@ function PayoutsTab() {
                     onClick={() => rejectMutation.mutate(p.id)}
                     disabled={rejectMutation.isPending}
                   >
-                    ✗ Отклонить
+                    <span className="flex items-center justify-center gap-1"><AlertIcon size={14} color="#FF4757" /> Отклонить</span>
                   </button>
                 </div>
               )}
               {p.status !== 'pending' && (
                 <p className="text-xs font-semibold"
                   style={{ color: p.status === 'approved' ? '#00D4AA' : '#FF4757' }}>
-                  {p.status === 'approved' ? '✓ Одобрено' : '✗ Отклонено'}
+                  {p.status === 'approved' ? <span className="flex items-center gap-1"><CheckCircleIcon size={12} color="#00D4AA" /> Одобрено</span> : <span className="flex items-center gap-1"><AlertIcon size={12} color="#FF4757" /> Отклонено</span>}
                 </p>
               )}
             </div>

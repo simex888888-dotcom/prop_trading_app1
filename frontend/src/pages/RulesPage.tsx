@@ -9,6 +9,8 @@ import { challengesApi } from '@/api/client'
 import { useAppStore } from '@/store/appStore'
 import { RiskMeter } from '@/components/ui/RiskMeter'
 import { CardSkeleton } from '@/components/ui/LoadingSkeleton'
+import { type ReactNode } from 'react'
+import { TargetIcon, ShieldIcon, AlertIcon, BarChartIcon, DollarIcon, ClockIcon, MoonIcon, CalendarIcon, ScrollIcon, CalculatorIcon, CheckCircleIcon } from '@/components/ui/Icon'
 
 type RulesTab = 'rules' | 'calculator'
 
@@ -60,7 +62,7 @@ export function RulesPage() {
             }}
             onClick={() => setActiveTab(tab)}
           >
-            {tab === 'rules' ? '📜 Правила' : '🧮 Калькулятор'}
+            {tab === 'rules' ? <span className="flex items-center justify-center gap-1"><ScrollIcon size={13} /> Правила</span> : <span className="flex items-center justify-center gap-1"><CalculatorIcon size={13} /> Калькулятор</span>}
           </button>
         ))}
       </div>
@@ -83,19 +85,19 @@ function StaticRules() {
     <div className="px-4 space-y-3">
       <div className="glass-card p-4 space-y-2">
         <p className="text-sm font-semibold text-white mb-3">Стандартные условия CHM KRYPTON</p>
-        <RuleItem icon="🎯" label="Цель по прибыли Phase 1" value="10%" ok={true} />
-        <RuleItem icon="🎯" label="Цель по прибыли Phase 2" value="5%" ok={true} />
-        <RuleItem icon="🛡️" label="Дневной лимит убытка" value="-5%" ok={false} />
-        <RuleItem icon="⚠️" label="Общий лимит убытка" value="-10%" ok={false} />
-        <RuleItem icon="📊" label="Минимум торговых дней" value="5 дней" ok={true} />
-        <RuleItem icon="💰" label="Профит-шер (funded)" value="80%" ok={true} />
+        <RuleItem icon={<TargetIcon size={16} color="#00D4AA" />} label="Цель по прибыли Phase 1" value="10%" ok={true} />
+        <RuleItem icon={<TargetIcon size={16} color="#00D4AA" />} label="Цель по прибыли Phase 2" value="5%" ok={true} />
+        <RuleItem icon={<ShieldIcon size={16} color="#FFA502" />} label="Дневной лимит убытка" value="-5%" ok={false} />
+        <RuleItem icon={<AlertIcon size={16} color="#FF4757" />} label="Общий лимит убытка" value="-10%" ok={false} />
+        <RuleItem icon={<BarChartIcon size={16} color="#6C63FF" />} label="Минимум торговых дней" value="5 дней" ok={true} />
+        <RuleItem icon={<DollarIcon size={16} color="#00D4AA" />} label="Профит-шер (funded)" value="80%" ok={true} />
       </div>
       <div className="glass-card p-4 space-y-2">
         <p className="text-sm font-semibold text-white mb-3">Дополнительные ограничения</p>
-        <RuleItem icon="⏰" label="Торговля на новостях" value="Запрещено" ok={false} />
-        <RuleItem icon="🌙" label="Удержание через ночь" value="Разрешено" ok={true} />
-        <RuleItem icon="📅" label="Удержание через выходные" value="Запрещено" ok={false} />
-        <RuleItem icon="🎯" label="Правило консистентности" value="Включено" ok={true} />
+        <RuleItem icon={<ClockIcon size={16} color="#FF4757" />} label="Торговля на новостях" value="Запрещено" ok={false} />
+        <RuleItem icon={<MoonIcon size={16} color="#6C63FF" />} label="Удержание через ночь" value="Разрешено" ok={true} />
+        <RuleItem icon={<CalendarIcon size={16} color="#FF4757" />} label="Удержание через выходные" value="Запрещено" ok={false} />
+        <RuleItem icon={<TargetIcon size={16} color="#00D4AA" />} label="Правило консистентности" value="Включено" ok={true} />
       </div>
       <div className="glass-card p-4">
         <p className="text-xs text-text-muted text-center">
@@ -109,7 +111,7 @@ function StaticRules() {
 function RulesContent({ rules }: { rules: any }) {
   const items = [
     {
-      icon: '🎯',
+      icon: <TargetIcon size={18} color="#00D4AA" />,
       label: 'Цель по прибыли',
       value: `${rules.profit_target_pct ?? 10}%`,
       progress: Math.min(100, ((rules.current_profit_pct ?? 0) / (rules.profit_target_pct ?? 10)) * 100),
@@ -118,7 +120,7 @@ function RulesContent({ rules }: { rules: any }) {
       passed: (rules.current_profit_pct ?? 0) >= (rules.profit_target_pct ?? 10),
     },
     {
-      icon: '🛡️',
+      icon: <ShieldIcon size={18} color="#FFA502" />,
       label: 'Дневной лимит убытка',
       value: `-${rules.daily_loss_limit_pct ?? 5}%`,
       progress: Math.min(100, ((rules.daily_loss_used_pct ?? 0) / (rules.daily_loss_limit_pct ?? 5)) * 100),
@@ -127,7 +129,7 @@ function RulesContent({ rules }: { rules: any }) {
       passed: false,
     },
     {
-      icon: '⚠️',
+      icon: <AlertIcon size={18} color="#FF4757" />,
       label: 'Общий лимит убытка',
       value: `-${rules.total_loss_limit_pct ?? 10}%`,
       progress: Math.min(100, ((rules.total_loss_used_pct ?? 0) / (rules.total_loss_limit_pct ?? 10)) * 100),
@@ -136,7 +138,7 @@ function RulesContent({ rules }: { rules: any }) {
       passed: false,
     },
     {
-      icon: '📊',
+      icon: <BarChartIcon size={18} color="#6C63FF" />,
       label: 'Минимум торговых дней',
       value: `${rules.min_trading_days ?? 5} дней`,
       progress: Math.min(100, ((rules.trading_days_count ?? 0) / (rules.min_trading_days ?? 5)) * 100),
@@ -163,7 +165,7 @@ function RulesContent({ rules }: { rules: any }) {
             </div>
             <div className="flex items-center gap-2">
               {item.passed && (
-                <span className="text-xs text-profit">✓</span>
+                <CheckCircleIcon size={14} color="#00D4AA" />
               )}
               <span className="num text-sm font-bold" style={{ color: item.color }}>
                 {item.value}
@@ -192,25 +194,25 @@ function RulesContent({ rules }: { rules: any }) {
         <p className="text-sm font-semibold text-white mb-3">Дополнительные ограничения</p>
         <div className="space-y-2">
           <RuleItem
-            icon="⏰"
+            icon={<ClockIcon size={16} color="#FF4757" />}
             label="Запрет торговли на новостях"
             value={rules.news_trading_ban ? 'Запрещено' : 'Разрешено'}
             ok={!rules.news_trading_ban}
           />
           <RuleItem
-            icon="🌙"
+            icon={<MoonIcon size={16} color="#6C63FF" />}
             label="Удержание позиций через ночь"
             value={rules.overnight_positions_allowed ? 'Разрешено' : 'Запрещено'}
             ok={rules.overnight_positions_allowed ?? true}
           />
           <RuleItem
-            icon="📅"
+            icon={<CalendarIcon size={16} color="#FF4757" />}
             label="Удержание через выходные"
             value={rules.weekend_positions_allowed ? 'Разрешено' : 'Запрещено'}
             ok={rules.weekend_positions_allowed ?? false}
           />
           <RuleItem
-            icon="🎯"
+            icon={<TargetIcon size={16} color="#00D4AA" />}
             label="Правило консистентности"
             value={rules.consistency_rule ? 'Включено' : 'Выключено'}
             ok={true}
@@ -222,7 +224,7 @@ function RulesContent({ rules }: { rules: any }) {
       {rules.days_remaining !== undefined && (
         <div className="glass-card p-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span>⏱️</span>
+            <ClockIcon size={18} color="#FFA502" />
             <span className="text-sm font-semibold text-white">Дней осталось</span>
           </div>
           <span
@@ -238,12 +240,12 @@ function RulesContent({ rules }: { rules: any }) {
 }
 
 function RuleItem({ icon, label, value, ok }: {
-  icon: string; label: string; value: string; ok: boolean
+  icon: ReactNode; label: string; value: string; ok: boolean
 }) {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
-        <span className="text-sm">{icon}</span>
+        <span className="flex items-center">{icon}</span>
         <span className="text-sm text-text-secondary">{label}</span>
       </div>
       <span
@@ -307,7 +309,7 @@ function RiskCalculator({ accountSize }: { accountSize: number }) {
         </div>
         {parseFloat(riskPct) > 2 && (
           <p className="text-xs text-loss text-center">
-            ⚠️ Высокий риск — рекомендуется не более 2%
+            <span className="flex items-center justify-center gap-1"><AlertIcon size={12} color="#FF4757" /> Высокий риск — рекомендуется не более 2%</span>
           </p>
         )}
       </div>

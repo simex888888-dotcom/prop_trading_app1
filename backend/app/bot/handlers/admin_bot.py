@@ -54,6 +54,7 @@ def _main_menu_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="⚡ Активировать", callback_data="adm:activate_prompt"),
         ],
         [
+            InlineKeyboardButton(text="🔍 Инфо по юзеру", callback_data="adm:info_prompt"),
             InlineKeyboardButton(text="🔄 Обновить", callback_data="adm:refresh"),
         ],
     ])
@@ -386,6 +387,64 @@ async def cmd_adm_activate(message: Message, session: AsyncSession) -> None:
         logger.warning(f"Could not notify trader: {e}")
 
 
+# ─── Информация о пользователе ─────────────────────────────────────────────────
+
+@router.message(Command("adm_info"))
+async def cmd_adm_info(message: Message, session: AsyncSession) -> None:
+    """
+    Показывает все испытания пользователя с challenge_id.
+    Использование: /adm_info <tg_id>
+    """
+    if not _admin_only(message):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 2 or not parts[1].lstrip("-").isdigit():
+        await message.answer(
+            "Использование: <code>/adm_info &lt;telegram_id&gt;</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    tg_id = int(parts[1])
+    user_res = await session.execute(select(User).where(User.telegram_id == tg_id))
+    user = user_res.scalar_one_or_none()
+    if not user:
+        await message.answer(f"❌ Пользователь {tg_id} не найден.")
+        return
+
+    challenges_res = await session.execute(
+        select(UserChallenge, ChallengeType)
+        .join(ChallengeType, UserChallenge.challenge_type_id == ChallengeType.id)
+        .where(UserChallenge.user_id == user.id)
+        .order_by(UserChallenge.id.desc())
+        .limit(10)
+    )
+    rows = challenges_res.all()
+
+    uname = f"@{user.username}" if user.username else user.first_name
+    lines = [
+        f"👤 <b>{uname}</b> | TG: <code>{tg_id}</code> | Роль: {user.role.value if hasattr(user.role, 'value') else user.role}\n"
+    ]
+
+    if not rows:
+        lines.append("Испытаний нет.")
+    else:
+        for ch, ct in rows:
+            status_icon = {
+                "phase1": "⚔️", "phase2": "⚔️", "funded": "💎",
+                "failed": "❌", "completed": "✅", "pending_payment": "⏳",
+            }.get(ch.status.value, "❓")
+            started = ch.started_at.strftime("%d.%m.%Y") if ch.started_at else "—"
+            lines.append(
+                f"{status_icon} <b>Challenge #{ch.id}</b> — {ct.name} (${int(ct.account_size):,})\n"
+                f"   Статус: <code>{ch.status.value}</code> | Начат: {started}\n"
+                f"   Баланс: ${float(ch.current_balance):,.2f} | P&L: ${float(ch.total_pnl):+,.2f}"
+            )
+
+    lines.append(f"\n<i>/adm_remove &lt;id&gt; — удалить испытание</i>")
+    await message.answer("\n".join(lines), parse_mode="HTML", reply_markup=_back_to_menu_kb())
+
+
 # ─── Удалить / сбросить испытание ──────────────────────────────────────────────
 
 @router.message(Command("adm_remove"))
@@ -578,6 +637,21 @@ async def handle_admin_callback(callback: CallbackQuery, session: AsyncSession) 
             "Например:\n"
             "<code>/adm_activate 123456789 10000</code>\n\n"
             "Доступные размеры счетов: $5,000 · $10,000 · $25,000 · $50,000 · $100,000 · $200,000",
+            parse_mode="HTML",
+            reply_markup=_back_to_menu_kb(),
+        )
+
+    elif action == "info_prompt":
+        await callback.message.answer(
+            "🔍 <b>Информация о пользователе</b>\n\n"
+            "Используйте команду:\n"
+            "<code>/adm_info &lt;telegram_id&gt;</code>\n\n"
+            "Покажет все испытания пользователя с их <b>Challenge ID</b>, "
+            "балансом и статусом.\n\n"
+            "Чтобы удалить испытание:\n"
+            "<code>/adm_remove &lt;challenge_id&gt;</code>\n\n"
+            "Чтобы сменить план:\n"
+            "<code>/adm_setplan &lt;telegram_id&gt; &lt;размер&gt;</code>",
             parse_mode="HTML",
             reply_markup=_back_to_menu_kb(),
         )

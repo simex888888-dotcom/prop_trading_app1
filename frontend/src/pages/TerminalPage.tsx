@@ -4,11 +4,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
-import { tradingApi, type Position, type Order, type Balance } from '@/api/client'
+import { tradingApi, paperApi, type Position, type Order, type Balance, type PaperPosition } from '@/api/client'
 import { TradingChart } from '@/components/charts/TradingChart'
 import { PnLNumber } from '@/components/ui/PnLNumber'
 import { useAppStore } from '@/store/appStore'
 import { useAuthStore } from '@/store/authStore'
+import { ZapIcon, BarChartIcon, AlertIcon, AnimatedCheckIcon, SpinnerIcon, TrendUpIcon, TrendDownIcon, SimIcon } from '@/components/ui/Icon'
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
 const BYBIT_PUBLIC = 'https://api.bybit.com'
@@ -210,6 +211,7 @@ export function TerminalPage() {
   const [livePositions, setLivePositions] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState<'positions' | 'orders'>('positions')
   const [showOB, setShowOB] = useState(false)
+  const [isPaperMode, setIsPaperMode] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
 
@@ -252,7 +254,21 @@ export function TerminalPage() {
   const { data: balance } = useQuery<Balance>({
     queryKey: ['balance', activeChallengeId],
     queryFn: () => tradingApi.getBalance(activeChallengeId!),
-    enabled: !!activeChallengeId,
+    enabled: !!activeChallengeId && !isPaperMode,
+    refetchInterval: 5_000,
+  })
+
+  // ── Paper balance ──────────────────────────────────────────────────────────
+  const { data: paperBalance } = useQuery({
+    queryKey: ['paper-balance'],
+    queryFn: () => paperApi.getBalance(),
+    enabled: isPaperMode,
+    refetchInterval: 5_000,
+  })
+  const { data: paperPositions = [] } = useQuery({
+    queryKey: ['paper-positions'],
+    queryFn: () => paperApi.getPositions(false),
+    enabled: isPaperMode,
     refetchInterval: 5_000,
   })
 
@@ -269,13 +285,15 @@ export function TerminalPage() {
   // ── Auto-calc qty from positionPct ─────────────────────────────────────────
   useEffect(() => {
     if (!currentPrice || currentPrice === 0) return
-    const avail = balance?.available_balance ?? liveEquity ?? 0
+    const avail = isPaperMode
+      ? (paperBalance?.available ?? 10000)
+      : (balance?.available_balance ?? liveEquity ?? 0)
     if (avail <= 0) return
     const positionValue = avail * (positionPct / 100) * leverage
     const raw = positionValue / currentPrice
     const dec = qtyDecimals(selectedPair)
     setQty(raw.toFixed(dec))
-  }, [positionPct, balance?.available_balance, liveEquity, currentPrice, leverage, selectedPair])
+  }, [positionPct, balance?.available_balance, paperBalance?.available, liveEquity, currentPrice, leverage, selectedPair, isPaperMode])
 
   // ── Auto-set TP/SL defaults when side or price changes ────────────────────
   useEffect(() => {
@@ -313,6 +331,16 @@ export function TerminalPage() {
     mutationFn: () => {
       const qtyNum = parseFloat(qty)
       if (!qty || isNaN(qtyNum) || qtyNum <= 0) throw new Error('Укажите количество')
+      if (isPaperMode) {
+        return paperApi.placeOrder({
+          symbol: selectedPair,
+          side,
+          qty,
+          leverage,
+          stop_loss: stopLoss || undefined,
+          take_profit: takeProfit || undefined,
+        })
+      }
       if (!activeChallengeId) throw new Error('Нет активного испытания')
       return tradingApi.placeOrder({
         symbol: selectedPair,
@@ -326,8 +354,13 @@ export function TerminalPage() {
       })
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['orders', activeChallengeId] })
-      queryClient.invalidateQueries({ queryKey: ['balance', activeChallengeId] })
+      if (isPaperMode) {
+        queryClient.invalidateQueries({ queryKey: ['paper-positions'] })
+        queryClient.invalidateQueries({ queryKey: ['paper-balance'] })
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['orders', activeChallengeId] })
+        queryClient.invalidateQueries({ queryKey: ['balance', activeChallengeId] })
+      }
     },
   })
 
@@ -337,17 +370,26 @@ export function TerminalPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['orders'] }),
   })
 
-  if (!activeChallengeId) {
+  if (!activeChallengeId && !isPaperMode) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-8 text-center">
-        <span className="text-5xl">⚡</span>
+        <ZapIcon size={48} color="#6C63FF" />
         <h2 className="text-xl font-bold text-white">Нет активного испытания</h2>
-        <p className="text-text-secondary">Купи испытание, чтобы начать торговать</p>
+        <p className="text-text-secondary">Купи испытание или используй Paper Trading</p>
+        <button
+          className="mt-2 px-6 py-3 rounded-xl font-bold text-white flex items-center gap-2"
+          style={{ background: 'linear-gradient(135deg, #6C63FF, #A855F7)' }}
+          onClick={() => setIsPaperMode(true)}
+        >
+          <SimIcon size={20} color="#fff" /> Начать Paper Trading
+        </button>
       </div>
     )
   }
 
-  const availBalance = balance?.available_balance ?? liveEquity ?? 0
+  const availBalance = isPaperMode
+    ? (paperBalance?.available ?? 10000)
+    : (balance?.available_balance ?? liveEquity ?? 0)
 
   return (
     <div className="flex flex-col pb-24 bg-bg-primary min-h-dvh">
@@ -357,9 +399,34 @@ export function TerminalPage() {
         <div className="flex items-center gap-2">
           <span className="font-bold text-white text-base">{selectedPair.replace('USDT', '/USDT')}</span>
           <span className="text-xs px-2 py-0.5 rounded-full bg-bg-border text-text-secondary">PERP</span>
+          {isPaperMode && (
+            <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ background: 'rgba(108,99,255,0.2)', color: '#A855F7', border: '1px solid rgba(168,85,247,0.4)' }}>
+              PAPER
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3">
-          {liveEquity !== null && (
+          {/* Paper mode toggle */}
+          <button
+            className="text-xs px-2 py-1 rounded-lg font-semibold flex items-center gap-1"
+            style={{
+              background: isPaperMode ? 'rgba(108,99,255,0.2)' : '#1A1A2E',
+              color: isPaperMode ? '#A855F7' : '#4A4A6A',
+              border: isPaperMode ? '1px solid rgba(168,85,247,0.4)' : '1px solid transparent',
+            }}
+            onClick={() => setIsPaperMode((v) => !v)}
+          >
+            <SimIcon size={12} color="currentColor" />
+            {isPaperMode ? 'Sim' : 'Live'}
+          </button>
+          {isPaperMode ? (
+            <div className="text-right">
+              <div className="text-xs text-text-secondary">Paper Balance</div>
+              <div className="num text-xs font-semibold" style={{ color: '#A855F7' }}>
+                ${(paperBalance?.equity ?? 10000).toLocaleString('en', { maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          ) : liveEquity !== null && (
             <div className="text-right">
               <div className="text-xs text-text-secondary">Equity</div>
               <div className="num text-xs font-semibold text-white">
@@ -437,7 +504,7 @@ export function TerminalPage() {
                 }}
                 onClick={() => setSide(s)}
               >
-                {s === 'Buy' ? '🟢 LONG' : '🔴 SHORT'}
+                {s === 'Buy' ? <><TrendUpIcon size={14} color="#fff" /> LONG</> : <><TrendDownIcon size={14} color="#fff" /> SHORT</>}
               </button>
             ))}
           </div>
@@ -460,7 +527,7 @@ export function TerminalPage() {
 
         {/* Стакан (OrderBook) toggle — always shown for Limit, toggle for Market */}
         <div className="flex items-center justify-between">
-          <span className="text-text-secondary text-xs font-semibold">📊 Стакан цен</span>
+          <span className="text-text-secondary text-xs font-semibold flex items-center gap-1"><BarChartIcon size={14} /> Стакан цен</span>
           <button
             className="text-xs px-3 py-1 rounded-lg font-semibold"
             style={{
@@ -653,8 +720,8 @@ export function TerminalPage() {
           whileTap={{ scale: 0.97 }}
         >
           {placeMutation.isPending
-            ? '⏳ Отправка...'
-            : `${side === 'Buy' ? '🟢 LONG' : '🔴 SHORT'} ${qty || '0'} ${selectedPair.replace('USDT', '')} · ${leverage}x`}
+            ? <span className="flex items-center justify-center gap-2"><SpinnerIcon size={16} /> Отправка...</span>
+            : <span className="flex items-center justify-center gap-2">{side === 'Buy' ? <TrendUpIcon size={16} color="#fff" /> : <TrendDownIcon size={16} color="#fff" />}{side === 'Buy' ? 'LONG' : 'SHORT'} {qty || '0'} {selectedPair.replace('USDT', '')} · {leverage}x</span>}
         </motion.button>
 
         {/* Error */}
@@ -667,7 +734,7 @@ export function TerminalPage() {
               className="rounded-xl px-4 py-3 text-xs"
               style={{ background: 'rgba(255,71,87,0.1)', color: '#FF4757', border: '1px solid rgba(255,71,87,0.2)' }}
             >
-              ⚠️ {getErrorMsg(placeMutation.error)}
+              <span className="flex items-center gap-1"><AlertIcon size={13} color="#FF4757" /> {getErrorMsg(placeMutation.error)}</span>
             </motion.div>
           )}
           {placeMutation.isSuccess && (
@@ -678,7 +745,7 @@ export function TerminalPage() {
               className="rounded-xl px-4 py-3 text-xs text-center"
               style={{ background: 'rgba(0,212,170,0.1)', color: '#00D4AA', border: '1px solid rgba(0,212,170,0.2)' }}
             >
-              ✅ Ордер размещён!
+              <span className="flex items-center justify-center gap-1"><AnimatedCheckIcon size={16} color="#00D4AA" /> Ордер размещён!</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -697,28 +764,51 @@ export function TerminalPage() {
               }}
               onClick={() => setActiveTab(tab)}
             >
-              {tab === 'positions' ? `Позиции (${livePositions.length})` : `Ордера (${orders.length})`}
+              {tab === 'positions'
+                ? `Позиции (${isPaperMode ? paperPositions.length : livePositions.length})`
+                : `Ордера (${orders.length})`}
             </button>
           ))}
         </div>
 
         {activeTab === 'positions' && (
           <div className="space-y-2">
-            {livePositions.length === 0 ? (
-              <p className="text-text-muted text-sm text-center py-4">Нет открытых позиций</p>
+            {isPaperMode ? (
+              paperPositions.length === 0 ? (
+                <p className="text-text-muted text-sm text-center py-4">Нет открытых paper позиций</p>
+              ) : (
+                paperPositions.map((pos) => (
+                  <PaperPositionRow
+                    key={pos.id}
+                    pos={pos}
+                    onClose={() => {
+                      paperApi.closePosition(pos.id).then(() => {
+                        queryClient.invalidateQueries({ queryKey: ['paper-positions'] })
+                        queryClient.invalidateQueries({ queryKey: ['paper-balance'] })
+                      })
+                    }}
+                  />
+                ))
+              )
             ) : (
-              livePositions.map((pos, i) => <PositionRow key={i} pos={pos} />)
-            )}
-            {livePositions.length > 0 && (
-              <motion.button
-                className="w-full py-3 rounded-xl text-sm font-semibold text-loss"
-                style={{ background: 'rgba(255,71,87,0.1)', border: '1px solid rgba(255,71,87,0.2)' }}
-                onClick={() => closeAllMutation.mutate()}
-                disabled={closeAllMutation.isPending}
-                whileTap={{ scale: 0.97 }}
-              >
-                ✕ Закрыть все позиции
-              </motion.button>
+              <>
+                {livePositions.length === 0 ? (
+                  <p className="text-text-muted text-sm text-center py-4">Нет открытых позиций</p>
+                ) : (
+                  livePositions.map((pos, i) => <PositionRow key={i} pos={pos} />)
+                )}
+                {livePositions.length > 0 && (
+                  <motion.button
+                    className="w-full py-3 rounded-xl text-sm font-semibold text-loss"
+                    style={{ background: 'rgba(255,71,87,0.1)', border: '1px solid rgba(255,71,87,0.2)' }}
+                    onClick={() => closeAllMutation.mutate()}
+                    disabled={closeAllMutation.isPending}
+                    whileTap={{ scale: 0.97 }}
+                  >
+                    ✕ Закрыть все позиции
+                  </motion.button>
+                )}
+              </>
             )}
           </div>
         )}
@@ -751,6 +841,36 @@ function PositionRow({ pos }: { pos: any }) {
         <span className="text-xs text-text-muted num">{pos.size}</span>
       </div>
       <PnLNumber value={pos.pnl ?? 0} size="sm" />
+    </div>
+  )
+}
+
+function PaperPositionRow({ pos, onClose }: { pos: PaperPosition; onClose: () => void }) {
+  const isLong = pos.side === 'Buy'
+  const upnl = pos.unrealized_pnl ?? 0
+  return (
+    <div className="glass-card p-3">
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <span className={`text-xs px-2 py-0.5 rounded font-bold ${isLong ? 'text-profit bg-profit/10' : 'text-loss bg-loss/10'}`}>
+            {isLong ? 'LONG' : 'SHORT'}
+          </span>
+          <span className="text-sm font-semibold text-white">{pos.symbol}</span>
+          <span className="text-xs text-text-muted num">{pos.qty}</span>
+          <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(168,85,247,0.15)', color: '#A855F7' }}>PAPER</span>
+        </div>
+        <PnLNumber value={upnl} size="sm" />
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="num text-xs text-text-muted">Вход: ${pos.entry_price.toFixed(2)} · {pos.leverage}x</span>
+        <button
+          className="text-xs px-2 py-1 rounded-lg font-semibold text-loss"
+          style={{ background: 'rgba(255,71,87,0.1)' }}
+          onClick={onClose}
+        >
+          Закрыть
+        </button>
+      </div>
     </div>
   )
 }

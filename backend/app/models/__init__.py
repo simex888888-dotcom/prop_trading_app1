@@ -7,6 +7,7 @@ from .achievement import Achievement, UserAchievement
 from .referral import Referral
 from .notification import Notification
 from .scaling import ScalingStep
+from .paper_position import PaperPosition, PaperSide
 
 __all__ = [
     "User",
@@ -20,4 +21,6 @@ __all__ = [
     "Referral",
     "Notification",
     "ScalingStep",
+    "PaperPosition",
+    "PaperSide",
 ]
