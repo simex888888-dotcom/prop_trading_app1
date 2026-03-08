@@ -6,17 +6,15 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from loguru import logger
-
 from app.api.dependencies import get_current_user, rate_limit_standard
-from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import encrypt_aes256, decrypt_aes256
+from app.core.security import encrypt_aes256
 from app.models.challenge import ChallengeStatus, ChallengeType, UserChallenge
 from app.models.user import User, UserRole
 from app.models.violation import Violation
@@ -135,8 +133,7 @@ async def purchase_challenge(
     _: None = Depends(rate_limit_standard),
 ) -> APIResponse[UserChallengeOut]:
     """
-    Покупка испытания — создаёт запись со статусом pending_payment.
-    Активация происходит только после подтверждения оплаты администратором.
+    Покупка испытания — создаёт demo аккаунт на Bybit и активирует испытание.
     """
     # Получаем тип испытания
     ct_result = await session.execute(
@@ -149,37 +146,48 @@ async def purchase_challenge(
     if not ct:
         raise HTTPException(status_code=404, detail="Challenge type not found")
 
-    # Один пользователь — одно активное испытание в любой момент времени.
+    # Проверяем, нет ли уже активного испытания такого типа
     existing = await session.execute(
         select(UserChallenge).where(
             UserChallenge.user_id == user.id,
-            UserChallenge.status.in_([
-                ChallengeStatus.pending_payment,
-                ChallengeStatus.phase1,
-                ChallengeStatus.phase2,
-                ChallengeStatus.funded,
-            ]),
+            UserChallenge.challenge_type_id == ct.id,
+            UserChallenge.status.in_([ChallengeStatus.phase1, ChallengeStatus.phase2]),
         )
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=409,
-            detail="You already have an active or pending challenge. Complete or fail the current one before starting a new one.",
+            detail="You already have an active challenge of this type",
         )
 
-    now = datetime.now(timezone.utc)
+    # Создаём demo суб-аккаунт на Bybit Demo Trading (api-demo.bybit.com)
+    from app.services.exchange.bybit_master import BybitMasterClient
+    master = BybitMasterClient(mode="demo")
+    try:
+        demo_account = await master.setup_demo_challenge_account(
+            account_size=ct.account_size,
+            username_prefix=f"CHM{user.telegram_id}",
+        )
+    except Exception as e:
+        logger.error(f"Failed to create Bybit demo account for user {user.id}: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Не удалось создать demo аккаунт: {str(e)}",
+        )
+    finally:
+        await master.close()
 
-    # Создаём запись в статусе pending_payment — Bybit аккаунт создадим после подтверждения
+    now = datetime.now(timezone.utc)
     challenge = UserChallenge(
         user_id=user.id,
         challenge_type_id=ct.id,
-        status=ChallengeStatus.pending_payment,
-        phase=None,
+        status=ChallengeStatus.phase1,
+        phase=1,
         account_mode="demo",
         exchange="bybit",
-        demo_account_id=f"PENDING_{user.telegram_id}_{int(now.timestamp())}",
-        demo_api_key_enc="",
-        demo_api_secret_enc="",
+        demo_account_id=demo_account["account_id"],
+        demo_api_key_enc=encrypt_aes256(demo_account["api_key"]),
+        demo_api_secret_enc=encrypt_aes256(demo_account["api_secret"]),
         initial_balance=ct.account_size,
         current_balance=ct.account_size,
         peak_equity=ct.account_size,
@@ -187,24 +195,21 @@ async def purchase_challenge(
         daily_pnl=Decimal("0"),
         total_pnl=Decimal("0"),
         trading_days_count=0,
-        started_at=None,
+        started_at=now,
         daily_reset_at=now,
     )
     session.add(challenge)
-    await session.flush()
+
+    # Обновляем роль пользователя
+    if user.role == UserRole.guest:
+        user.role = UserRole.challenger
 
     await session.commit()
 
-    # Уведомляем всех администраторов
+    # Уведомление
     from app.services.notification_service import NotificationService
     notif = NotificationService(session)
-    username_str = f"@{user.username}" if user.username else f"tg:{user.telegram_id}"
-    await notif.send_payment_pending_to_admins(
-        challenge=challenge,
-        user_display=username_str,
-        plan_name=ct.name,
-        plan_price=float(ct.price),
-    )
+    await notif.send_challenge_purchased(challenge)
 
     return APIResponse(data=UserChallengeOut.model_validate(challenge))
 
@@ -307,34 +312,6 @@ async def get_challenge_violations(
     )
     violations = result.scalars().all()
     return APIResponse(data=[ViolationOut.model_validate(v) for v in violations])
-
-
-@router.get("/{challenge_id}/account-details", response_model=APIResponse[dict])
-async def get_account_details(
-    challenge_id: int,
-    user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_db),
-) -> APIResponse[dict]:
-    """Возвращает детали Bybit суб-аккаунта (имя пользователя, UID, API ключ)."""
-    challenge = await _get_user_challenge(challenge_id, user.id, session)
-    if challenge.status not in (
-        ChallengeStatus.phase1, ChallengeStatus.phase2, ChallengeStatus.funded
-    ):
-        raise HTTPException(status_code=403, detail="Account details available only for active challenges")
-
-    api_key = ""
-    if challenge.demo_api_key_enc:
-        try:
-            api_key = decrypt_aes256(challenge.demo_api_key_enc)
-        except Exception:
-            pass
-
-    return APIResponse(data={
-        "bybit_uid": challenge.demo_account_id,
-        "username": challenge.demo_account_username or "",
-        "api_key": api_key,
-        "account_mode": challenge.account_mode,
-    })
 
 
 # ─── Вспомогательные функции ──────────────────────────────────────────────────

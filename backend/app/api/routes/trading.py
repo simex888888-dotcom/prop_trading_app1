@@ -73,6 +73,20 @@ class CancelOrderRequest(BaseModel):
     symbol: str
 
 
+class ModifyTradingStopRequest(BaseModel):
+    challenge_id: int
+    symbol: str
+    take_profit: Optional[str] = None
+    stop_loss: Optional[str] = None
+
+
+class PartialCloseRequest(BaseModel):
+    challenge_id: int
+    symbol: str
+    side: str   # сторона ТЕКУЩЕЙ позиции: Buy или Sell
+    qty: str    # количество к закрытию
+
+
 class TradeHistoryOut(BaseModel):
     id: int
     symbol: str
@@ -316,6 +330,52 @@ async def cancel_order(
     client = _build_client(challenge)
     try:
         result = await client.cancel_order(symbol=body.symbol, order_id=order_id)
+    except BybitAPIError as e:
+        raise HTTPException(status_code=400, detail=e.ret_msg)
+    finally:
+        await client.close()
+    return APIResponse(data=result)
+
+
+@router.post("/position/modify", response_model=APIResponse[dict])
+async def modify_trading_stop(
+    body: ModifyTradingStopRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+    _: None = Depends(rate_limit_trading),
+) -> APIResponse[dict]:
+    """Изменить TP/SL для открытой позиции. Передай '0' чтобы снять."""
+    challenge = await _get_active_challenge(body.challenge_id, user, session)
+    client = _build_client(challenge)
+    try:
+        result = await client.set_trading_stop(
+            symbol=body.symbol,
+            take_profit=body.take_profit,
+            stop_loss=body.stop_loss,
+        )
+    except BybitAPIError as e:
+        raise HTTPException(status_code=400, detail=e.ret_msg)
+    finally:
+        await client.close()
+    return APIResponse(data=result)
+
+
+@router.post("/position/partial-close", response_model=APIResponse[dict])
+async def partial_close_position(
+    body: PartialCloseRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+    _: None = Depends(rate_limit_trading),
+) -> APIResponse[dict]:
+    """Частичное закрытие позиции (reduce-only market ордер)."""
+    challenge = await _get_active_challenge(body.challenge_id, user, session)
+    client = _build_client(challenge)
+    try:
+        result = await client.close_position_partial(
+            symbol=body.symbol,
+            side=body.side,
+            qty=body.qty,
+        )
     except BybitAPIError as e:
         raise HTTPException(status_code=400, detail=e.ret_msg)
     finally:

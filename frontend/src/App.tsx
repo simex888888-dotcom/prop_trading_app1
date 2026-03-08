@@ -6,7 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 
-import { authApi, challengesApi } from '@/api/client'
+import { authApi } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import { useAppStore } from '@/store/appStore'
 import { AnimatedTabBar } from '@/components/animated/AnimatedTabBar'
@@ -59,26 +59,21 @@ function AppLayout() {
 
   return (
     <div className="flex flex-col h-dvh overflow-hidden bg-bg-primary">
-      <div
-        className="flex-1 overflow-y-auto"
-        style={showTabBar ? { paddingBottom: "calc(64px + max(6px, env(safe-area-inset-bottom)))" } : {}}
-      >
-        <PageTransition>
-          <Routes location={location}>
-            <Route path="/onboarding" element={<OnboardingPage />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/terminal" element={<TerminalPage />} />
-            <Route path="/challenges" element={<ChallengesPage />} />
-            <Route path="/history" element={<HistoryPage />} />
-            <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/rules" element={<RulesPage />} />
-            <Route path="/payouts" element={<PayoutsPage />} />
-            <Route path="/scaling" element={<ScalingPage />} />
-            <Route path="/admin" element={<AdminPage />} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </PageTransition>
-      </div>
+      <PageTransition>
+        <Routes location={location}>
+          <Route path="/onboarding" element={<OnboardingPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/terminal" element={<TerminalPage />} />
+          <Route path="/challenges" element={<ChallengesPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/rules" element={<RulesPage />} />
+          <Route path="/payouts" element={<PayoutsPage />} />
+          <Route path="/scaling" element={<ScalingPage />} />
+          <Route path="/admin" element={<AdminPage />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </PageTransition>
       {showTabBar && <AnimatedTabBar />}
     </div>
   )
@@ -121,17 +116,6 @@ function AuthGate() {
         const result = await authApi.loginTelegram(initData)
         setTokens(result.access_token, result.refresh_token)
         setUser(result.user_id, result.role)
-
-        // Load the user's active challenge so activeChallengeId is available
-        try {
-          const myChallenges = await challengesApi.my()
-          const active = myChallenges.find(
-            (c) => c.status === 'phase1' || c.status === 'phase2' || c.status === 'funded'
-          )
-          if (active) setActiveChallenge(active)
-        } catch {
-          // Non-critical: user can still use the app without an active challenge
-        }
 
         if (result.is_new) {
           setStatus('onboarding')

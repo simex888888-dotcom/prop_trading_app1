@@ -1,22 +1,16 @@
 /**
  * DashboardPage — главный дашборд CHM_KRYPTON.
  */
-import { ReactNode, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { statsApi, challengesApi } from '@/api/client'
+import { statsApi, tradingApi } from '@/api/client'
 import { PnLNumber } from '@/components/ui/PnLNumber'
 import { RiskMeter } from '@/components/ui/RiskMeter'
 import { DashboardSkeleton } from '@/components/ui/LoadingSkeleton'
-import { BottomSheet } from '@/components/ui/BottomSheet'
 import { EquitySparkline } from '@/components/charts/EquitySparkline'
 import { AnimatedRank, getRankByStats } from '@/components/animated/AnimatedRank'
 import { useAppStore } from '@/store/appStore'
-import {
-  FireIcon, ZapIcon, ClipboardIcon, DollarIcon, TrophyIcon,
-  ClockIcon, KeyIcon, AlertIcon, SimIcon,
-} from '@/components/ui/Icon'
 
 function ModeBadge({ mode, hasChallengeActive }: { mode?: string; hasChallengeActive?: boolean }) {
   const isFunded = mode === 'funded'
@@ -73,35 +67,19 @@ function ProgressBar({ value, max = 100, color = '#6C63FF', label }: {
 export function DashboardPage() {
   const navigate = useNavigate()
   const activeChallengeId = useAppStore((s) => s.activeChallengeId)
-  const [showAccountDetails, setShowAccountDetails] = useState(false)
-  const [accountDetails, setAccountDetails] = useState<{ bybit_uid: string; username: string; api_key: string; account_mode: string } | null>(null)
-  const [loadingDetails, setLoadingDetails] = useState(false)
-  const [copiedField, setCopiedField] = useState<string | null>(null)
-
-  async function handleShowAccountDetails() {
-    if (!activeChallengeId) return
-    setLoadingDetails(true)
-    try {
-      const details = await challengesApi.getAccountDetails(activeChallengeId)
-      setAccountDetails(details)
-      setShowAccountDetails(true)
-    } catch (e) {
-      setShowAccountDetails(true)
-    } finally {
-      setLoadingDetails(false)
-    }
-  }
-
-  function copyToClipboard(text: string, field: string) {
-    navigator.clipboard?.writeText(text)
-    setCopiedField(field)
-    setTimeout(() => setCopiedField(null), 2000)
-  }
 
   const { data: dashboard, isLoading } = useQuery({
     queryKey: ['dashboard', activeChallengeId],
     queryFn: () => statsApi.getDashboard(activeChallengeId ?? undefined),
     refetchInterval: 10_000,
+  })
+
+  // Живой баланс напрямую с Bybit (обновляется чаще, не из БД)
+  const { data: liveBalance } = useQuery({
+    queryKey: ['live-balance', activeChallengeId],
+    queryFn: () => tradingApi.getBalance(activeChallengeId!),
+    enabled: !!activeChallengeId,
+    refetchInterval: 8_000,
   })
 
   const { data: equityCurve = [] } = useQuery({
@@ -113,6 +91,9 @@ export function DashboardPage() {
   if (isLoading) return <DashboardSkeleton />
 
   const d = dashboard
+  // Показываем живой equity из Bybit если доступен, иначе из БД
+  const displayEquity = liveBalance?.equity ?? d?.equity ?? 0
+  const displayUnrealizedPnl = liveBalance?.unrealized_pnl ?? 0
   const rank = getRankByStats(
     d?.account_mode === 'funded' ? 1 : 0,
     d?.total_pnl ?? 0
@@ -146,30 +127,46 @@ export function DashboardPage() {
         </div>
       </motion.div>
 
-      {/* Main account card */}
-      <motion.div variants={item} className="glass-card p-5 space-y-4">
+      {/* Main account card — выделенный баланс */}
+      <motion.div variants={item} className="glass-card p-5 space-y-4"
+        style={{ border: '1px solid rgba(108,99,255,0.25)', boxShadow: '0 4px 24px rgba(108,99,255,0.1)' }}>
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-text-secondary text-xs mb-1">Equity</p>
-            <PnLNumber
-              value={d?.equity ?? 0}
-              showSign={false}
-              size="xl"
-              prefix="$"
-            />
+            <p className="text-text-secondary text-xs mb-1 uppercase tracking-wide">
+              Equity {liveBalance ? '● Live' : ''}
+            </p>
+            {/* Большой яркий баланс */}
+            <div className="flex items-baseline gap-2">
+              <span className="num text-4xl font-black text-white">
+                ${displayEquity.toLocaleString('en', { maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            {/* Нереализованный PnL */}
+            {displayUnrealizedPnl !== 0 && (
+              <div className={`flex items-center gap-1 mt-1 ${displayUnrealizedPnl >= 0 ? 'text-profit' : 'text-loss'}`}>
+                <span className="text-sm">{displayUnrealizedPnl >= 0 ? '▲' : '▼'}</span>
+                <span className="num text-sm font-semibold">
+                  {displayUnrealizedPnl >= 0 ? '+' : ''}{displayUnrealizedPnl.toFixed(2)} unrealized
+                </span>
+              </div>
+            )}
           </div>
           {d?.active_challenge_id && (
             <div className="text-right">
               <p className="text-text-secondary text-xs mb-1">Дн. PnL</p>
               <PnLNumber value={d?.daily_pnl ?? 0} size="lg" />
+              <p className="text-text-secondary text-xs mt-2 mb-0.5">Total PnL</p>
+              <PnLNumber value={d?.total_pnl ?? 0} size="sm" />
             </div>
           )}
         </div>
 
+        {/* Equity sparkline */}
         {equityCurve.length > 0 && (
           <EquitySparkline data={equityCurve} height={64} />
         )}
 
+        {/* Profit progress */}
         {d?.active_challenge_id && (
           <ProgressBar
             value={d.profit_progress_pct}
@@ -212,7 +209,13 @@ export function DashboardPage() {
       {/* Streak */}
       <motion.div variants={item} className="glass-card p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <FireIcon size={32} />
+          <motion.div
+            animate={{ scale: [1, 1.15, 1] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+            className="text-2xl"
+          >
+            🔥
+          </motion.div>
           <div>
             <p className="text-white font-semibold">Streak без нарушений</p>
             <p className="text-text-muted text-xs">Удерживай серию</p>
@@ -225,20 +228,10 @@ export function DashboardPage() {
 
       {/* Quick actions */}
       <motion.div variants={item} className="grid grid-cols-2 gap-3">
-        <QuickAction icon={<ZapIcon size={20} color="#6C63FF" />} label="Торговать" onClick={() => navigate('/terminal')} color="#6C63FF" />
-        <QuickAction icon={<ClipboardIcon size={20} color="#00D4AA" />} label="Правила" onClick={() => navigate('/rules')} color="#00D4AA" />
-        <QuickAction icon={<DollarIcon size={20} color="#FFA502" />} label="Выплаты" onClick={() => navigate('/payouts')} color="#FFA502" />
-        <QuickAction icon={<TrophyIcon size={20} color="#FFD700" />} label="Рейтинг" onClick={() => navigate('/profile')} color="#FFD700" />
-        {d?.active_challenge_id && (
-          <QuickAction
-            icon={loadingDetails
-              ? <ClockIcon size={20} color="#00B8FF" />
-              : <KeyIcon size={20} color="#00B8FF" />}
-            label="Bybit аккаунт"
-            onClick={handleShowAccountDetails}
-            color="#00B8FF"
-          />
-        )}
+        <QuickAction icon="⚡" label="Торговать" onClick={() => navigate('/terminal')} color="#6C63FF" />
+        <QuickAction icon="📋" label="Правила" onClick={() => navigate('/rules')} color="#00D4AA" />
+        <QuickAction icon="💰" label="Выплаты" onClick={() => navigate('/payouts')} color="#FFA502" />
+        <QuickAction icon="🏆" label="Рейтинг" onClick={() => navigate('/profile')} color="#FFD700" />
       </motion.div>
 
       {/* No active challenge */}
@@ -247,9 +240,7 @@ export function DashboardPage() {
           variants={item}
           className="glass-card p-6 text-center space-y-3"
         >
-          <div className="flex justify-center mb-2">
-            <SimIcon size={56} color="#6C63FF" />
-          </div>
+          <div className="text-4xl">⚛️</div>
           <p className="text-white font-semibold">Начни своё испытание</p>
           <p className="text-text-secondary text-sm">
             Выбери размер счёта и начни путь трейдера
@@ -264,95 +255,12 @@ export function DashboardPage() {
           </motion.button>
         </motion.div>
       )}
-
-      {/* Account details bottom sheet */}
-      <BottomSheet
-        isOpen={showAccountDetails}
-        onClose={() => setShowAccountDetails(false)}
-        title="Bybit субаккаунт"
-      >
-        <div className="p-5 space-y-4">
-          {accountDetails ? (
-            <>
-              <p className="text-text-secondary text-sm text-center">
-                Эти данные — ваш Bybit субаккаунт для торговли.
-                Вы можете торговать прямо в приложении или подключить аккаунт в Bybit по API ключу.
-              </p>
-
-              <motion.button
-                className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2"
-                style={{ background: 'linear-gradient(135deg, #6C63FF, #00D4AA)' }}
-                onClick={() => { setShowAccountDetails(false); navigate('/terminal') }}
-                whileTap={{ scale: 0.97 }}
-              >
-                <ZapIcon size={18} color="#fff" />
-                Торговать в приложении
-              </motion.button>
-
-              <div className="relative flex items-center">
-                <div className="flex-1 border-t border-bg-border" />
-                <span className="px-3 text-xs text-text-muted">или используйте API</span>
-                <div className="flex-1 border-t border-bg-border" />
-              </div>
-
-              {[
-                { label: 'Bybit UID', value: accountDetails.bybit_uid, field: 'uid' },
-                { label: 'Sub-account username', value: accountDetails.username || '—', field: 'username' },
-                { label: 'API Key', value: accountDetails.api_key || '—', field: 'api_key' },
-              ].map(({ label, value, field }) => (
-                <div key={field}
-                  className="glass-card p-3 space-y-1"
-                  style={{ border: '1px solid rgba(255,255,255,0.06)' }}
-                >
-                  <p className="text-xs text-text-muted">{label}</p>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-white font-mono break-all">{value}</span>
-                    {value !== '—' && (
-                      <button
-                        onClick={() => copyToClipboard(value, field)}
-                        className="shrink-0 text-xs px-2 py-1 rounded-lg font-semibold transition-all"
-                        style={{
-                          background: copiedField === field ? 'rgba(0,212,170,0.2)' : 'rgba(108,99,255,0.2)',
-                          color: copiedField === field ? '#00D4AA' : '#a89fff',
-                        }}
-                      >
-                        {copiedField === field ? '✓' : 'Копировать'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              <p className="text-xs text-text-muted text-center flex items-center justify-center gap-1">
-                <AlertIcon size={12} color="#FFA502" />
-                API Secret доступен только в момент создания субаккаунта. Торговля через приложение не требует API ключей.
-              </p>
-            </>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-text-secondary">Нет данных о субаккаунте</p>
-              <p className="text-xs text-text-muted mt-2">
-                Возможно, аккаунт был создан вручную администратором
-              </p>
-              <motion.button
-                className="mt-4 w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2"
-                style={{ background: 'linear-gradient(135deg, #6C63FF, #00D4AA)' }}
-                onClick={() => { setShowAccountDetails(false); navigate('/terminal') }}
-                whileTap={{ scale: 0.97 }}
-              >
-                <ZapIcon size={18} color="#fff" />
-                Торговать в приложении
-              </motion.button>
-            </div>
-          )}
-        </div>
-      </BottomSheet>
     </motion.div>
   )
 }
 
 function QuickAction({ icon, label, onClick, color }: {
-  icon: ReactNode; label: string; onClick: () => void; color: string
+  icon: string; label: string; onClick: () => void; color: string
 }) {
   return (
     <motion.button
@@ -361,7 +269,7 @@ function QuickAction({ icon, label, onClick, color }: {
       whileTap={{ scale: 0.95 }}
     >
       <span
-        className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+        className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
         style={{ background: `${color}15`, border: `1px solid ${color}30` }}
       >
         {icon}

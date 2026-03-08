@@ -1,278 +1,76 @@
 /**
- * TerminalPage — мобильный торговый терминал с ордербуком и слайдером позиции.
+ * TerminalPage — полноценный мобильный торговый терминал.
+ * Фичи: TP/SL редактирование, частичное закрытие, реал-тайм через WS.
  */
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
-import { tradingApi, paperApi, type Position, type Order, type Balance, type PaperPosition } from '@/api/client'
+import { tradingApi, type Position, type Order } from '@/api/client'
 import { TradingChart } from '@/components/charts/TradingChart'
 import { PnLNumber } from '@/components/ui/PnLNumber'
 import { useAppStore } from '@/store/appStore'
 import { useAuthStore } from '@/store/authStore'
-import { ZapIcon, BarChartIcon, AlertIcon, AnimatedCheckIcon, SpinnerIcon, TrendUpIcon, TrendDownIcon, SimIcon } from '@/components/ui/Icon'
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
-const BYBIT_PUBLIC = 'https://api.bybit.com'
 
-const PAIRS = [
-  'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT',
-  'DOGEUSDT', 'AVAXUSDT', 'ADAUSDT', 'LINKUSDT', 'DOTUSDT',
-  'NEARUSDT', 'APTUSDT', 'ARBUSDT', 'OPUSDT', 'SUIUSDT',
-  'INJUSDT', 'TIAUSDT', 'TONUSDT', 'RUNEUSDT', 'AAVEUSDT',
-]
-
-/** Количество знаков после запятой для qty по паре */
-function qtyDecimals(symbol: string): number {
-  if (symbol.startsWith('BTC')) return 3
-  if (symbol.startsWith('ETH')) return 2
-  if (['DOGEUSDT', 'XRPUSDT', 'ADAUSDT', 'SHIBUSDT'].includes(symbol)) return 0
-  return 1
+interface LiveData {
+  equity: number
+  wallet_balance: number
+  unrealized_pnl: number
+  positions: any[]
 }
-
-function getErrorMsg(error: unknown): string {
-  if (!error) return 'Неизвестная ошибка'
-  const e = error as any
-  return (
-    e?.response?.data?.detail ||
-    e?.response?.data?.message ||
-    e?.message ||
-    'Ошибка ордера'
-  )
-}
-
-// ─── Orderbook hook ───────────────────────────────────────────────────────────
-
-interface OBLevel { price: number; size: number }
-interface Orderbook { asks: OBLevel[]; bids: OBLevel[] }
-
-function useOrderbook(symbol: string, enabled: boolean) {
-  return useQuery<Orderbook>({
-    queryKey: ['orderbook', symbol],
-    queryFn: async () => {
-      const resp = await fetch(
-        `${BYBIT_PUBLIC}/v5/market/orderbook?category=linear&symbol=${symbol}&limit=8`
-      )
-      const json = await resp.json()
-      const result = json.result
-      return {
-        asks: (result?.a ?? []).map(([p, s]: [string, string]) => ({
-          price: parseFloat(p),
-          size: parseFloat(s),
-        })),
-        bids: (result?.b ?? []).map(([p, s]: [string, string]) => ({
-          price: parseFloat(p),
-          size: parseFloat(s),
-        })),
-      }
-    },
-    enabled,
-    refetchInterval: 1_500,
-    staleTime: 800,
-  })
-}
-
-// ─── OrderBook component ──────────────────────────────────────────────────────
-
-function OrderBook({
-  symbol,
-  onPriceSelect,
-  selectedPrice,
-}: {
-  symbol: string
-  onPriceSelect: (price: string) => void
-  selectedPrice: string
-}) {
-  const { data: ob, isLoading } = useOrderbook(symbol, true)
-
-  if (isLoading || !ob) {
-    return (
-      <div className="rounded-2xl p-3 text-center text-text-muted text-xs" style={{ background: '#0E0E18' }}>
-        Загрузка стакана...
-      </div>
-    )
-  }
-
-  const maxSize = Math.max(
-    ...ob.asks.map((a) => a.size),
-    ...ob.bids.map((b) => b.size),
-    1,
-  )
-
-  const midPrice =
-    ob.asks.length && ob.bids.length
-      ? ((ob.asks[ob.asks.length - 1]?.price ?? 0) + (ob.bids[0]?.price ?? 0)) / 2
-      : 0
-
-  const spread = ob.asks.length && ob.bids.length
-    ? (ob.asks[ob.asks.length - 1].price - ob.bids[0].price).toFixed(2)
-    : '—'
-
-  const priceStr = (p: number) =>
-    p >= 1000
-      ? p.toLocaleString('en', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-      : p.toFixed(4)
-
-  return (
-    <div className="rounded-2xl overflow-hidden text-xs" style={{ background: '#0E0E18' }}>
-      <div className="px-3 py-2 flex justify-between text-text-muted border-b border-bg-border">
-        <span>Цена (USDT)</span>
-        <span>Объём</span>
-      </div>
-
-      {/* Asks (продажа) — reversed: lowest ask at bottom */}
-      {[...ob.asks].reverse().slice(0, 6).map((lvl, i) => {
-        const pct = (lvl.size / maxSize) * 100
-        const isSelected = selectedPrice === lvl.price.toString()
-        return (
-          <button
-            key={i}
-            className="w-full flex justify-between px-3 py-1.5 relative text-left transition-opacity hover:opacity-90"
-            style={{
-              background: isSelected ? 'rgba(255,71,87,0.15)' : 'transparent',
-            }}
-            onClick={() => onPriceSelect(lvl.price.toFixed(
-              lvl.price >= 1000 ? 1 : 4
-            ))}
-          >
-            {/* Depth bar */}
-            <div
-              className="absolute right-0 top-0 h-full opacity-20"
-              style={{ width: `${pct}%`, background: '#FF4757' }}
-            />
-            <span className="relative z-10 num font-medium" style={{ color: '#FF6B7A' }}>
-              {priceStr(lvl.price)}
-            </span>
-            <span className="relative z-10 num text-text-muted">{lvl.size.toFixed(2)}</span>
-          </button>
-        )
-      })}
-
-      {/* Spread */}
-      <div
-        className="px-3 py-1.5 flex justify-between border-y border-bg-border"
-        style={{ background: '#12121A' }}
-      >
-        <span className="num font-bold text-white text-sm">
-          {midPrice > 0 ? priceStr(midPrice) : '—'}
-        </span>
-        <span className="text-text-muted">Спред: {spread}</span>
-      </div>
-
-      {/* Bids (покупка) */}
-      {ob.bids.slice(0, 6).map((lvl, i) => {
-        const pct = (lvl.size / maxSize) * 100
-        const isSelected = selectedPrice === lvl.price.toString()
-        return (
-          <button
-            key={i}
-            className="w-full flex justify-between px-3 py-1.5 relative text-left transition-opacity hover:opacity-90"
-            style={{
-              background: isSelected ? 'rgba(0,212,170,0.15)' : 'transparent',
-            }}
-            onClick={() => onPriceSelect(lvl.price.toFixed(
-              lvl.price >= 1000 ? 1 : 4
-            ))}
-          >
-            <div
-              className="absolute right-0 top-0 h-full opacity-20"
-              style={{ width: `${pct}%`, background: '#00D4AA' }}
-            />
-            <span className="relative z-10 num font-medium" style={{ color: '#00D4AA' }}>
-              {priceStr(lvl.price)}
-            </span>
-            <span className="relative z-10 num text-text-muted">{lvl.size.toFixed(2)}</span>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-// ─── Main TerminalPage ────────────────────────────────────────────────────────
 
 export function TerminalPage() {
   const activeChallengeId = useAppStore((s) => s.activeChallengeId)
   const selectedPair = useAppStore((s) => s.selectedPair)
-  const setSelectedPair = useAppStore((s) => s.setSelectedPair)
   const accessToken = useAuthStore((s) => s.accessToken)
   const queryClient = useQueryClient()
 
   const [timeframe, setTimeframe] = useState('60')
-  const [pairSearch, setPairSearch] = useState('')
   const [orderType, setOrderType] = useState<'Market' | 'Limit'>('Market')
   const [side, setSide] = useState<'Buy' | 'Sell'>('Buy')
-  const [positionPct, setPositionPct] = useState(10)   // % от баланса
   const [qty, setQty] = useState('')
   const [price, setPrice] = useState('')
   const [stopLoss, setStopLoss] = useState('')
   const [takeProfit, setTakeProfit] = useState('')
   const [leverage, setLeverage] = useState(10)
-  const [liveEquity, setLiveEquity] = useState<number | null>(null)
-  const [livePositions, setLivePositions] = useState<any[]>([])
+  const [liveData, setLiveData] = useState<LiveData | null>(null)
   const [activeTab, setActiveTab] = useState<'positions' | 'orders'>('positions')
-  const [showOB, setShowOB] = useState(false)
-  const [isPaperMode, setIsPaperMode] = useState(false)
-
   const wsRef = useRef<WebSocket | null>(null)
 
-  // ── WebSocket live updates ─────────────────────────────────────────────────
+  // WebSocket реал-тайм + автореконнект
   useEffect(() => {
     if (!activeChallengeId || !accessToken) return
-    const ws = new WebSocket(
-      `${WS_URL}/trading/ws/${activeChallengeId}?token=${accessToken}`
-    )
-    wsRef.current = ws
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data)
-        if (msg.type === 'balance_update') {
-          setLiveEquity(msg.data.equity)
-          setLivePositions(msg.data.positions ?? [])
-        }
-      } catch {}
+
+    let closed = false
+    const connect = () => {
+      if (closed) return
+      const ws = new WebSocket(
+        `${WS_URL}/trading/ws/${activeChallengeId}?token=${accessToken}`
+      )
+      wsRef.current = ws
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data)
+          if (msg.type === 'balance_update') {
+            setLiveData(msg.data)
+            queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+          }
+        } catch {}
+      }
+      ws.onclose = () => { if (!closed) setTimeout(connect, 3000) }
+      ws.onerror = () => ws.close()
     }
-    ws.onerror = () => {}
-    return () => ws.close()
+    connect()
+    return () => { closed = true; wsRef.current?.close() }
   }, [activeChallengeId, accessToken])
 
-  // ── Kline data ─────────────────────────────────────────────────────────────
-  // ── Filtered pairs for coin search ────────────────────────────────────────
-  const filteredPairs = useMemo(() => {
-    const q = pairSearch.trim().toUpperCase()
-    if (!q) return PAIRS
-    return PAIRS.filter((p) => p.replace('USDT', '').includes(q) || p.includes(q))
-  }, [pairSearch])
-
-  const klineInterval = ['1', '3'].includes(timeframe) ? 1_000 : ['5', '15'].includes(timeframe) ? 2_000 : 5_000
   const { data: klines = [] } = useQuery({
     queryKey: ['klines', selectedPair, timeframe],
     queryFn: () => tradingApi.getKline(selectedPair, timeframe),
-    refetchInterval: klineInterval,
+    refetchInterval: 10_000,
   })
 
-  // ── Balance ────────────────────────────────────────────────────────────────
-  const { data: balance } = useQuery<Balance>({
-    queryKey: ['balance', activeChallengeId],
-    queryFn: () => tradingApi.getBalance(activeChallengeId!),
-    enabled: !!activeChallengeId && !isPaperMode,
-    refetchInterval: 5_000,
-  })
-
-  // ── Paper balance ──────────────────────────────────────────────────────────
-  const { data: paperBalance } = useQuery({
-    queryKey: ['paper-balance'],
-    queryFn: () => paperApi.getBalance(),
-    enabled: isPaperMode,
-    refetchInterval: 5_000,
-  })
-  const { data: paperPositions = [] } = useQuery({
-    queryKey: ['paper-positions'],
-    queryFn: () => paperApi.getPositions(false),
-    enabled: isPaperMode,
-    refetchInterval: 5_000,
-  })
-
-  // ── Open orders ────────────────────────────────────────────────────────────
   const { data: orders = [] } = useQuery({
     queryKey: ['orders', activeChallengeId],
     queryFn: () => tradingApi.getOrders(activeChallengeId!),
@@ -280,546 +78,162 @@ export function TerminalPage() {
     refetchInterval: 5_000,
   })
 
-  const currentPrice = klines.length > 0 ? klines[klines.length - 1].close : 0
-
-  // ── Auto-calc qty from positionPct ─────────────────────────────────────────
-  useEffect(() => {
-    if (!currentPrice || currentPrice === 0) return
-    const avail = isPaperMode
-      ? (paperBalance?.available ?? 10000)
-      : (balance?.available_balance ?? liveEquity ?? 0)
-    if (avail <= 0) return
-    const positionValue = avail * (positionPct / 100) * leverage
-    const raw = positionValue / currentPrice
-    const dec = qtyDecimals(selectedPair)
-    setQty(raw.toFixed(dec))
-  }, [positionPct, balance?.available_balance, paperBalance?.available, liveEquity, currentPrice, leverage, selectedPair, isPaperMode])
-
-  // ── Auto-set TP/SL defaults when side or price changes ────────────────────
-  useEffect(() => {
-    if (!currentPrice) return
-    const refP = orderType === 'Limit' && price ? parseFloat(price) : currentPrice
-    if (side === 'Buy') {
-      setTakeProfit((refP * 1.02).toFixed(refP >= 1000 ? 1 : 4))
-      setStopLoss((refP * 0.99).toFixed(refP >= 1000 ? 1 : 4))
-    } else {
-      setTakeProfit((refP * 0.98).toFixed(refP >= 1000 ? 1 : 4))
-      setStopLoss((refP * 1.01).toFixed(refP >= 1000 ? 1 : 4))
-    }
-  }, [side, selectedPair])
-
-  function applyTPPreset(pct: number) {
-    const ref = orderType === 'Limit' && price ? parseFloat(price) : currentPrice
-    if (!ref) return
-    const val = side === 'Buy'
-      ? (ref * (1 + pct / 100))
-      : (ref * (1 - pct / 100))
-    setTakeProfit(val.toFixed(ref >= 1000 ? 1 : 4))
-  }
-
-  function applySLPreset(pct: number) {
-    const ref = orderType === 'Limit' && price ? parseFloat(price) : currentPrice
-    if (!ref) return
-    const val = side === 'Buy'
-      ? (ref * (1 - pct / 100))
-      : (ref * (1 + pct / 100))
-    setStopLoss(val.toFixed(ref >= 1000 ? 1 : 4))
-  }
-
-  // ── Place order mutation ───────────────────────────────────────────────────
   const placeMutation = useMutation({
-    mutationFn: () => {
-      const qtyNum = parseFloat(qty)
-      if (!qty || isNaN(qtyNum) || qtyNum <= 0) throw new Error('Укажите количество')
-      if (isPaperMode) {
-        return paperApi.placeOrder({
-          symbol: selectedPair,
-          side,
-          qty,
-          leverage,
-          stop_loss: stopLoss || undefined,
-          take_profit: takeProfit || undefined,
-        })
-      }
-      if (!activeChallengeId) throw new Error('Нет активного испытания')
-      return tradingApi.placeOrder({
-        symbol: selectedPair,
-        side,
-        order_type: orderType,
-        qty,
-        price: orderType === 'Limit' && price ? price : undefined,
-        stop_loss: stopLoss || undefined,
-        take_profit: takeProfit || undefined,
-        challenge_id: activeChallengeId,
-      })
-    },
+    mutationFn: () => tradingApi.placeOrder({
+      symbol: selectedPair,
+      side,
+      order_type: orderType,
+      qty,
+      price: orderType === 'Limit' ? price : undefined,
+      stop_loss: stopLoss || undefined,
+      take_profit: takeProfit || undefined,
+      challenge_id: activeChallengeId!,
+    }),
     onSuccess: () => {
-      if (isPaperMode) {
-        queryClient.invalidateQueries({ queryKey: ['paper-positions'] })
-        queryClient.invalidateQueries({ queryKey: ['paper-balance'] })
-      } else {
-        queryClient.invalidateQueries({ queryKey: ['orders', activeChallengeId] })
-        queryClient.invalidateQueries({ queryKey: ['balance', activeChallengeId] })
-      }
+      queryClient.invalidateQueries({ queryKey: ['orders', activeChallengeId] })
+      setQty(''); setPrice(''); setStopLoss(''); setTakeProfit('')
     },
   })
 
-  // ── Close all mutation ─────────────────────────────────────────────────────
   const closeAllMutation = useMutation({
     mutationFn: () => tradingApi.closeAllPositions(activeChallengeId!),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['orders'] }),
   })
 
-  if (!activeChallengeId && !isPaperMode) {
+  const currentPrice = klines.length > 0 ? klines[klines.length - 1].close : 0
+  const positions = liveData?.positions ?? []
+  const equity = liveData?.equity ?? null
+  const unrealizedPnl = liveData?.unrealized_pnl ?? 0
+
+  if (!activeChallengeId) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-8 text-center">
-        <ZapIcon size={48} color="#6C63FF" />
+        <span className="text-5xl">⚡</span>
         <h2 className="text-xl font-bold text-white">Нет активного испытания</h2>
-        <p className="text-text-secondary">Купи испытание или используй Paper Trading</p>
-        <button
-          className="mt-2 px-6 py-3 rounded-xl font-bold text-white flex items-center gap-2"
-          style={{ background: 'linear-gradient(135deg, #6C63FF, #A855F7)' }}
-          onClick={() => setIsPaperMode(true)}
-        >
-          <SimIcon size={20} color="#fff" /> Начать Paper Trading
-        </button>
+        <p className="text-text-secondary">Купи испытание, чтобы начать торговать</p>
       </div>
     )
   }
 
-  const availBalance = isPaperMode
-    ? (paperBalance?.available ?? 10000)
-    : (balance?.available_balance ?? liveEquity ?? 0)
-
   return (
     <div className="flex flex-col pb-24 bg-bg-primary min-h-dvh">
-
-      {/* Symbol header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-bg-border">
+      {/* Шапка */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-bg-border">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-white text-base">{selectedPair.replace('USDT', '/USDT')}</span>
+          <span className="font-bold text-white text-sm">{selectedPair}</span>
           <span className="text-xs px-2 py-0.5 rounded-full bg-bg-border text-text-secondary">PERP</span>
-          {isPaperMode && (
-            <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ background: 'rgba(108,99,255,0.2)', color: '#A855F7', border: '1px solid rgba(168,85,247,0.4)' }}>
-              PAPER
-            </span>
-          )}
         </div>
-        <div className="flex items-center gap-3">
-          {/* Paper mode toggle */}
-          <button
-            className="text-xs px-2 py-1 rounded-lg font-semibold flex items-center gap-1"
-            style={{
-              background: isPaperMode ? 'rgba(108,99,255,0.2)' : '#1A1A2E',
-              color: isPaperMode ? '#A855F7' : '#4A4A6A',
-              border: isPaperMode ? '1px solid rgba(168,85,247,0.4)' : '1px solid transparent',
-            }}
-            onClick={() => setIsPaperMode((v) => !v)}
-          >
-            <SimIcon size={12} color="currentColor" />
-            {isPaperMode ? 'Sim' : 'Live'}
-          </button>
-          {isPaperMode ? (
+        <div className="flex items-center gap-4">
+          {equity !== null && (
             <div className="text-right">
-              <div className="text-xs text-text-secondary">Paper Balance</div>
-              <div className="num text-xs font-semibold" style={{ color: '#A855F7' }}>
-                ${(paperBalance?.equity ?? 10000).toLocaleString('en', { maximumFractionDigits: 2 })}
+              <div className="text-[10px] text-text-muted uppercase tracking-wide">Equity</div>
+              <div className={`num text-base font-bold ${unrealizedPnl >= 0 ? 'text-profit' : 'text-loss'}`}>
+                ${equity.toLocaleString('en', { maximumFractionDigits: 2 })}
               </div>
-            </div>
-          ) : liveEquity !== null && (
-            <div className="text-right">
-              <div className="text-xs text-text-secondary">Equity</div>
-              <div className="num text-xs font-semibold text-white">
-                ${liveEquity.toLocaleString('en', { maximumFractionDigits: 2 })}
-              </div>
-            </div>
-          )}
-          <div className="num text-base font-bold text-white">
-            ${currentPrice.toLocaleString('en', { maximumFractionDigits: currentPrice < 1 ? 6 : 2 })}
-          </div>
-        </div>
-      </div>
-
-      {/* Coin search + pair selector */}
-      <div className="px-4 pt-2 pb-1">
-        <input
-          type="text"
-          value={pairSearch}
-          onChange={(e) => setPairSearch(e.target.value)}
-          placeholder="Поиск монеты (BTC, ETH...)"
-          className="w-full rounded-xl px-3 py-2 text-sm text-white mb-2"
-          style={{
-            background: '#1A1A2E',
-            border: '1px solid rgba(255,255,255,0.08)',
-            outline: 'none',
-          }}
-        />
-        <div className="overflow-x-auto">
-          <div className="flex gap-1.5" style={{ width: 'max-content' }}>
-            {filteredPairs.map((p) => (
-              <button
-                key={p}
-                onClick={() => { setSelectedPair(p); setPairSearch('') }}
-                className="px-3 py-1 rounded-lg text-xs font-semibold transition-all shrink-0"
-                style={{
-                  background: selectedPair === p ? '#6C63FF' : '#1A1A2E',
-                  color: selectedPair === p ? '#fff' : '#4A4A6A',
-                  border: `1px solid ${selectedPair === p ? '#6C63FF' : '#1E1E2E'}`,
-                }}
-              >
-                {p.replace('USDT', '')}
-              </button>
-            ))}
-            {filteredPairs.length === 0 && (
-              <span className="text-text-muted text-xs px-2 py-1">Не найдено</span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Chart */}
-      <TradingChart
-        data={klines}
-        symbol={selectedPair}
-        onTimeframeChange={setTimeframe}
-        activeTimeframe={timeframe}
-        height={260}
-      />
-
-      {/* Order form */}
-      <div className="px-4 space-y-3 pt-2">
-
-        {/* Buy/Sell + Market/Limit */}
-        <div className="flex gap-2">
-          <div className="flex rounded-xl overflow-hidden flex-1 border border-bg-border">
-            {(['Buy', 'Sell'] as const).map((s) => (
-              <button
-                key={s}
-                className="flex-1 py-2.5 text-sm font-bold transition-all"
-                style={{
-                  background: side === s
-                    ? s === 'Buy' ? 'linear-gradient(135deg,#00D4AA,#00B894)' : 'linear-gradient(135deg,#FF4757,#D63031)'
-                    : 'transparent',
-                  color: side === s ? '#fff' : '#4A4A5A',
-                }}
-                onClick={() => setSide(s)}
-              >
-                {s === 'Buy' ? <><TrendUpIcon size={14} color="#fff" /> LONG</> : <><TrendDownIcon size={14} color="#fff" /> SHORT</>}
-              </button>
-            ))}
-          </div>
-          <div className="flex rounded-xl overflow-hidden border border-bg-border">
-            {(['Market', 'Limit'] as const).map((t) => (
-              <button
-                key={t}
-                className="px-3 py-2 text-xs font-semibold transition-all"
-                style={{
-                  background: orderType === t ? '#1E1E2E' : 'transparent',
-                  color: orderType === t ? '#fff' : '#4A4A5A',
-                }}
-                onClick={() => setOrderType(t)}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Стакан (OrderBook) toggle — always shown for Limit, toggle for Market */}
-        <div className="flex items-center justify-between">
-          <span className="text-text-secondary text-xs font-semibold flex items-center gap-1"><BarChartIcon size={14} /> Стакан цен</span>
-          <button
-            className="text-xs px-3 py-1 rounded-lg font-semibold"
-            style={{
-              background: (showOB || orderType === 'Limit') ? 'rgba(108,99,255,0.2)' : '#1A1A2E',
-              color: (showOB || orderType === 'Limit') ? '#6C63FF' : '#4A4A6A',
-            }}
-            onClick={() => setShowOB((v) => !v)}
-          >
-            {showOB || orderType === 'Limit' ? 'Скрыть' : 'Показать'}
-          </button>
-        </div>
-
-        {(showOB || orderType === 'Limit') && (
-          <OrderBook
-            symbol={selectedPair}
-            selectedPrice={price}
-            onPriceSelect={(p) => {
-              setPrice(p)
-              setOrderType('Limit')
-            }}
-          />
-        )}
-
-        {/* Limit price input (shown when Limit mode) */}
-        {orderType === 'Limit' && (
-          <div>
-            <label className="text-text-secondary text-xs mb-1 block">Цена лимит-ордера</label>
-            <input
-              type="number"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              placeholder={String(currentPrice.toFixed(2))}
-              inputMode="decimal"
-              className="w-full bg-bg-border border border-bg-border rounded-xl px-3 py-2.5 text-white text-sm num focus:outline-none"
-              style={{ borderColor: price ? 'rgba(108,99,255,0.4)' : '' }}
-            />
-          </div>
-        )}
-
-        {/* Position size slider */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-text-secondary text-xs font-semibold">Размер позиции</span>
-            <span className="num text-sm font-bold text-white">
-              {positionPct}%
-              {availBalance > 0 && (
-                <span className="text-text-muted text-xs ml-1">
-                  ≈ ${(availBalance * positionPct / 100).toFixed(2)}
-                </span>
+              {unrealizedPnl !== 0 && (
+                <div className={`num text-[10px] ${unrealizedPnl >= 0 ? 'text-profit' : 'text-loss'}`}>
+                  {unrealizedPnl >= 0 ? '+' : ''}{unrealizedPnl.toFixed(2)}
+                </div>
               )}
-            </span>
+            </div>
+          )}
+          <div className="num text-lg font-bold text-white">
+            ${currentPrice.toLocaleString('en', { maximumFractionDigits: 4 })}
           </div>
-          <input
-            type="range"
-            min={1}
-            max={100}
-            step={1}
-            value={positionPct}
-            onChange={(e) => setPositionPct(Number(e.target.value))}
-            className="w-full accent-brand-primary"
-          />
-          <div className="flex gap-1.5 mt-1.5">
-            {[5, 10, 25, 50, 100].map((p) => (
-              <button
-                key={p}
-                className="flex-1 py-1 rounded-lg text-xs font-bold transition-all"
-                style={{
-                  background: positionPct === p ? '#6C63FF' : '#1A1A2E',
-                  color: positionPct === p ? '#fff' : '#4A4A6A',
-                }}
-                onClick={() => setPositionPct(p)}
-              >
-                {p}%
+        </div>
+      </div>
+
+      <TradingChart data={klines} symbol={selectedPair} onTimeframeChange={setTimeframe} activeTimeframe={timeframe} height={280} />
+
+      {/* Форма */}
+      <div className="px-4 space-y-3 pt-3">
+        <div className="flex gap-2">
+          <div className="flex rounded-xl overflow-hidden flex-1" style={{ border: '1px solid #1E1E2E' }}>
+            {(['Buy', 'Sell'] as const).map((s) => (
+              <button key={s} className="flex-1 py-2.5 text-sm font-bold transition-all"
+                style={{ background: side === s ? (s === 'Buy' ? '#00D4AA' : '#FF4757') : 'transparent', color: side === s ? '#fff' : '#4A4A5A' }}
+                onClick={() => setSide(s)}>
+                {s === 'Buy' ? '▲ LONG' : '▼ SHORT'}
               </button>
             ))}
           </div>
-          {/* Qty display — always visible */}
-          <div className="mt-1.5 flex items-center gap-2">
-            <span className="text-text-muted text-xs shrink-0">Кол-во:</span>
-            <input
-              type="number"
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              inputMode="decimal"
-              className="flex-1 bg-bg-border border border-bg-border rounded-lg px-3 py-1.5 text-white text-xs num focus:outline-none"
-              placeholder={currentPrice > 0 ? '0.000' : 'Загрузка...'}
-            />
-            <span className="text-text-muted text-xs shrink-0">{selectedPair.replace('USDT', '')}</span>
-          </div>
-        </div>
-
-        {/* Leverage slider */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-text-secondary text-xs font-semibold">Кредитное плечо</span>
-            <span className="num text-sm font-bold text-white">{leverage}x</span>
-          </div>
-          <input
-            type="range"
-            min={1}
-            max={50}
-            step={1}
-            value={leverage}
-            onChange={(e) => setLeverage(Number(e.target.value))}
-            className="w-full accent-brand-primary"
-          />
-          <div className="flex gap-1.5 mt-1">
-            {[1, 3, 5, 10, 20, 50].map((l) => (
-              <button
-                key={l}
-                className="flex-1 py-1 rounded-lg text-xs font-bold"
-                style={{
-                  background: leverage === l ? 'rgba(0,212,170,0.2)' : '#1A1A2E',
-                  color: leverage === l ? '#00D4AA' : '#4A4A6A',
-                }}
-                onClick={() => setLeverage(l)}
-              >
-                {l}x
-              </button>
+          <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid #1E1E2E' }}>
+            {(['Market', 'Limit'] as const).map((t) => (
+              <button key={t} className="px-3 py-2 text-xs font-semibold transition-all"
+                style={{ background: orderType === t ? '#1E1E2E' : 'transparent', color: orderType === t ? '#fff' : '#4A4A5A' }}
+                onClick={() => setOrderType(t)}>{t}</button>
             ))}
           </div>
         </div>
 
-        {/* TP input with presets */}
-        <div>
-          <label className="text-text-secondary text-xs mb-1 block">Take Profit</label>
-          <input
-            type="number"
-            value={takeProfit}
-            onChange={(e) => setTakeProfit(e.target.value)}
-            placeholder="Цена TP"
-            inputMode="decimal"
-            className="w-full bg-bg-border border rounded-xl px-3 py-2 text-white text-sm num focus:outline-none"
-            style={{ borderColor: takeProfit ? 'rgba(0,212,170,0.35)' : '#1E1E2E' }}
-          />
-          <div className="flex gap-1 mt-1.5">
-            {[1, 2, 3, 5, 10].map((p) => (
-              <button
-                key={p}
-                className="flex-1 py-1 rounded-lg text-xs font-semibold"
-                style={{ background: '#0E1A14', color: '#00D4AA' }}
-                onClick={() => applyTPPreset(p)}
-              >
-                +{p}%
-              </button>
-            ))}
-          </div>
+        <div className="grid grid-cols-2 gap-2">
+          <OrderInput label="Количество" value={qty} onChange={setQty} placeholder="0.001" />
+          {orderType === 'Limit' && <OrderInput label="Цена" value={price} onChange={setPrice} placeholder={String(currentPrice)} />}
+          <OrderInput label="Стоп-лосс" value={stopLoss} onChange={setStopLoss} placeholder="Цена SL" />
+          <OrderInput label="Тейк-профит" value={takeProfit} onChange={setTakeProfit} placeholder="Цена TP" />
         </div>
 
-        {/* SL input with presets */}
-        <div>
-          <label className="text-text-secondary text-xs mb-1 block">Stop Loss</label>
-          <input
-            type="number"
-            value={stopLoss}
-            onChange={(e) => setStopLoss(e.target.value)}
-            placeholder="Цена SL"
-            inputMode="decimal"
-            className="w-full bg-bg-border border rounded-xl px-3 py-2 text-white text-sm num focus:outline-none"
-            style={{ borderColor: stopLoss ? 'rgba(255,71,87,0.35)' : '#1E1E2E' }}
-          />
-          <div className="flex gap-1 mt-1.5">
-            {[0.5, 1, 2, 3, 5].map((p) => (
-              <button
-                key={p}
-                className="flex-1 py-1 rounded-lg text-xs font-semibold"
-                style={{ background: '#1A0E0E', color: '#FF4757' }}
-                onClick={() => applySLPreset(p)}
-              >
-                -{p}%
-              </button>
-            ))}
-          </div>
+        <div className="flex items-center gap-3">
+          <span className="text-text-secondary text-xs shrink-0">Плечо</span>
+          <input type="range" min={1} max={50} value={leverage}
+            onChange={(e) => setLeverage(Number(e.target.value))} className="flex-1 accent-brand-primary" />
+          <span className="num text-sm font-bold text-white w-10 text-right">{leverage}x</span>
         </div>
 
-        {/* Place order button */}
-        <motion.button
-          className="w-full py-4 rounded-2xl font-bold text-white text-base"
+        <motion.button className="w-full py-4 rounded-2xl font-bold text-white text-base"
           style={{
-            background: side === 'Buy'
-              ? 'linear-gradient(135deg, #00D4AA, #00B894)'
-              : 'linear-gradient(135deg, #FF4757, #D63031)',
-            boxShadow: side === 'Buy'
-              ? '0 4px 20px rgba(0,212,170,0.3)'
-              : '0 4px 20px rgba(255,71,87,0.3)',
-            opacity: placeMutation.isPending ? 0.7 : 1,
+            background: side === 'Buy' ? 'linear-gradient(135deg, #00D4AA, #00B894)' : 'linear-gradient(135deg, #FF4757, #D63031)',
+            boxShadow: side === 'Buy' ? '0 4px 20px rgba(0,212,170,0.3)' : '0 4px 20px rgba(255,71,87,0.3)',
           }}
-          onClick={() => placeMutation.mutate()}
-          disabled={placeMutation.isPending || !qty || parseFloat(qty) <= 0}
-          whileTap={{ scale: 0.97 }}
-        >
-          {placeMutation.isPending
-            ? <span className="flex items-center justify-center gap-2"><SpinnerIcon size={16} /> Отправка...</span>
-            : <span className="flex items-center justify-center gap-2">{side === 'Buy' ? <TrendUpIcon size={16} color="#fff" /> : <TrendDownIcon size={16} color="#fff" />}{side === 'Buy' ? 'LONG' : 'SHORT'} {qty || '0'} {selectedPair.replace('USDT', '')} · {leverage}x</span>}
+          onClick={() => placeMutation.mutate()} disabled={placeMutation.isPending || !qty} whileTap={{ scale: 0.97 }}>
+          {placeMutation.isPending ? '⏳ Отправка...' : `${side === 'Buy' ? '▲ LONG' : '▼ SHORT'} ${qty || '0'} ${selectedPair}`}
         </motion.button>
 
-        {/* Error */}
-        <AnimatePresence>
-          {placeMutation.isError && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="rounded-xl px-4 py-3 text-xs"
-              style={{ background: 'rgba(255,71,87,0.1)', color: '#FF4757', border: '1px solid rgba(255,71,87,0.2)' }}
-            >
-              <span className="flex items-center gap-1"><AlertIcon size={13} color="#FF4757" /> {getErrorMsg(placeMutation.error)}</span>
-            </motion.div>
-          )}
-          {placeMutation.isSuccess && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="rounded-xl px-4 py-3 text-xs text-center"
-              style={{ background: 'rgba(0,212,170,0.1)', color: '#00D4AA', border: '1px solid rgba(0,212,170,0.2)' }}
-            >
-              <span className="flex items-center justify-center gap-1"><AnimatedCheckIcon size={16} color="#00D4AA" /> Ордер размещён!</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {placeMutation.isError && (
+          <p className="text-loss text-xs text-center">
+            {(placeMutation.error as any)?.response?.data?.detail ?? 'Ошибка при открытии позиции'}
+          </p>
+        )}
       </div>
 
-      {/* Positions / Orders tabs */}
+      {/* Позиции/Ордера */}
       <div className="px-4 mt-4">
         <div className="flex gap-1 p-1 bg-bg-border rounded-xl mb-3">
           {(['positions', 'orders'] as const).map((tab) => (
-            <button
-              key={tab}
-              className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all"
-              style={{
-                background: activeTab === tab ? '#12121A' : 'transparent',
-                color: activeTab === tab ? '#fff' : '#4A4A5A',
-              }}
-              onClick={() => setActiveTab(tab)}
-            >
-              {tab === 'positions'
-                ? `Позиции (${isPaperMode ? paperPositions.length : livePositions.length})`
-                : `Ордера (${orders.length})`}
+            <button key={tab} className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all"
+              style={{ background: activeTab === tab ? '#12121A' : 'transparent', color: activeTab === tab ? '#fff' : '#4A4A5A' }}
+              onClick={() => setActiveTab(tab)}>
+              {tab === 'positions' ? `Позиции (${positions.length})` : `Ордера (${orders.length})`}
             </button>
           ))}
         </div>
 
         {activeTab === 'positions' && (
           <div className="space-y-2">
-            {isPaperMode ? (
-              paperPositions.length === 0 ? (
-                <p className="text-text-muted text-sm text-center py-4">Нет открытых paper позиций</p>
-              ) : (
-                paperPositions.map((pos) => (
-                  <PaperPositionRow
-                    key={pos.id}
-                    pos={pos}
-                    onClose={() => {
-                      paperApi.closePosition(pos.id).then(() => {
-                        queryClient.invalidateQueries({ queryKey: ['paper-positions'] })
-                        queryClient.invalidateQueries({ queryKey: ['paper-balance'] })
-                      })
-                    }}
-                  />
-                ))
-              )
-            ) : (
-              <>
-                {livePositions.length === 0 ? (
-                  <p className="text-text-muted text-sm text-center py-4">Нет открытых позиций</p>
-                ) : (
-                  livePositions.map((pos, i) => <PositionRow key={i} pos={pos} />)
-                )}
-                {livePositions.length > 0 && (
-                  <motion.button
-                    className="w-full py-3 rounded-xl text-sm font-semibold text-loss"
-                    style={{ background: 'rgba(255,71,87,0.1)', border: '1px solid rgba(255,71,87,0.2)' }}
-                    onClick={() => closeAllMutation.mutate()}
-                    disabled={closeAllMutation.isPending}
-                    whileTap={{ scale: 0.97 }}
-                  >
-                    ✕ Закрыть все позиции
-                  </motion.button>
-                )}
-              </>
+            {positions.length === 0
+              ? <p className="text-text-muted text-sm text-center py-4">Нет открытых позиций</p>
+              : positions.map((pos: any, i: number) => (
+                  <PositionRow key={`${pos.symbol}-${i}`} pos={pos} challengeId={activeChallengeId!}
+                    onChanged={() => queryClient.invalidateQueries({ queryKey: ['positions'] })} />
+                ))}
+            {positions.length > 0 && (
+              <motion.button className="w-full py-3 rounded-xl text-sm font-semibold text-loss"
+                style={{ background: 'rgba(255,71,87,0.1)', border: '1px solid rgba(255,71,87,0.2)' }}
+                onClick={() => closeAllMutation.mutate()} disabled={closeAllMutation.isPending} whileTap={{ scale: 0.97 }}>
+                ✕ Закрыть все позиции
+              </motion.button>
             )}
           </div>
         )}
 
         {activeTab === 'orders' && (
           <div className="space-y-2">
-            {orders.length === 0 ? (
-              <p className="text-text-muted text-sm text-center py-4">Нет активных ордеров</p>
-            ) : (
-              orders.map((order) => <OrderRow key={order.order_id} order={order} />)
-            )}
+            {orders.length === 0
+              ? <p className="text-text-muted text-sm text-center py-4">Нет активных ордеров</p>
+              : orders.map((order) => (
+                  <OrderRow key={order.order_id} order={order} challengeId={activeChallengeId!}
+                    onCancelled={() => queryClient.invalidateQueries({ queryKey: ['orders'] })} />
+                ))}
           </div>
         )}
       </div>
@@ -827,68 +241,174 @@ export function TerminalPage() {
   )
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ── PositionRow: TP/SL + частичное закрытие ───────────────────────────────────
 
-function PositionRow({ pos }: { pos: any }) {
-  const isLong = pos.side === 'Buy'
-  return (
-    <div className="glass-card p-3 flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <span className={`text-xs px-2 py-0.5 rounded font-bold ${isLong ? 'text-profit bg-profit/10' : 'text-loss bg-loss/10'}`}>
-          {isLong ? 'LONG' : 'SHORT'}
-        </span>
-        <span className="text-sm font-semibold text-white">{pos.symbol}</span>
-        <span className="text-xs text-text-muted num">{pos.size}</span>
-      </div>
-      <PnLNumber value={pos.pnl ?? 0} size="sm" />
-    </div>
-  )
-}
+function PositionRow({ pos, challengeId, onChanged }: { pos: any; challengeId: number; onChanged: () => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const [tpInput, setTpInput] = useState(String(pos.take_profit ?? ''))
+  const [slInput, setSlInput] = useState(String(pos.stop_loss ?? ''))
+  const [closeQty, setCloseQty] = useState(50)
+  const [msg, setMsg] = useState('')
+  const [saving, setSaving] = useState(false)
 
-function PaperPositionRow({ pos, onClose }: { pos: PaperPosition; onClose: () => void }) {
   const isLong = pos.side === 'Buy'
-  const upnl = pos.unrealized_pnl ?? 0
+  const pnl = pos.pnl ?? pos.unrealized_pnl ?? 0
+  const size = Number(pos.size)
+
+  const notify = (text: string) => { setMsg(text); setTimeout(() => setMsg(''), 3000) }
+
+  const saveTPSL = async () => {
+    setSaving(true)
+    try {
+      await tradingApi.modifyTradingStop({ challenge_id: challengeId, symbol: pos.symbol, take_profit: tpInput || '0', stop_loss: slInput || '0' })
+      notify('✅ TP/SL обновлён')
+      onChanged()
+    } catch (e: any) { notify('❌ ' + (e?.response?.data?.detail ?? 'Ошибка')) }
+    setSaving(false)
+  }
+
+  const partialClose = async () => {
+    const qtyToClose = ((closeQty / 100) * size).toFixed(3)
+    setSaving(true)
+    try {
+      await tradingApi.partialClose({ challenge_id: challengeId, symbol: pos.symbol, side: pos.side, qty: qtyToClose })
+      notify(`✅ Закрыто ${closeQty}%`)
+      onChanged()
+    } catch (e: any) { notify('❌ ' + (e?.response?.data?.detail ?? 'Ошибка')) }
+    setSaving(false)
+  }
+
   return (
-    <div className="glass-card p-3">
-      <div className="flex items-center justify-between mb-1">
+    <div className="glass-card overflow-hidden">
+      <button className="w-full p-3 flex items-center justify-between" onClick={() => setExpanded(!expanded)}>
         <div className="flex items-center gap-2">
           <span className={`text-xs px-2 py-0.5 rounded font-bold ${isLong ? 'text-profit bg-profit/10' : 'text-loss bg-loss/10'}`}>
             {isLong ? 'LONG' : 'SHORT'}
           </span>
           <span className="text-sm font-semibold text-white">{pos.symbol}</span>
-          <span className="text-xs text-text-muted num">{pos.qty}</span>
-          <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(168,85,247,0.15)', color: '#A855F7' }}>PAPER</span>
+          <span className="text-xs text-text-muted num">{size}</span>
         </div>
-        <PnLNumber value={upnl} size="sm" />
-      </div>
-      <div className="flex items-center justify-between">
-        <span className="num text-xs text-text-muted">Вход: ${pos.entry_price.toFixed(2)} · {pos.leverage}x</span>
-        <button
-          className="text-xs px-2 py-1 rounded-lg font-semibold text-loss"
-          style={{ background: 'rgba(255,71,87,0.1)' }}
-          onClick={onClose}
-        >
-          Закрыть
-        </button>
-      </div>
+        <div className="flex items-center gap-2">
+          <PnLNumber value={pnl} size="sm" />
+          <span className="text-text-muted text-xs">{expanded ? '▲' : '▼'}</span>
+        </div>
+      </button>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+            className="px-3 pb-3 space-y-3 border-t border-bg-border">
+
+            <div className="flex gap-4 pt-2 text-xs text-text-muted">
+              <span>Avg: <span className="num text-white">{pos.avg_price?.toFixed(2) ?? '—'}</span></span>
+              <span>TP: <span className="num text-profit">{pos.take_profit ?? '—'}</span></span>
+              <span>SL: <span className="num text-loss">{pos.stop_loss ?? '—'}</span></span>
+            </div>
+
+            {/* TP / SL */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-text-secondary">Изменить TP / SL</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-profit block mb-1">Take Profit</label>
+                  <input type="number" value={tpInput} onChange={(e) => setTpInput(e.target.value)}
+                    placeholder="0 = снять"
+                    className="w-full bg-bg-border rounded-xl px-3 py-2 text-white text-sm num focus:outline-none border border-transparent focus:border-profit"
+                    inputMode="decimal" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-loss block mb-1">Stop Loss</label>
+                  <input type="number" value={slInput} onChange={(e) => setSlInput(e.target.value)}
+                    placeholder="0 = снять"
+                    className="w-full bg-bg-border rounded-xl px-3 py-2 text-white text-sm num focus:outline-none border border-transparent focus:border-loss"
+                    inputMode="decimal" />
+                </div>
+              </div>
+              <button className="w-full py-2 rounded-xl text-xs font-bold text-white"
+                style={{ background: '#6C63FF' }} onClick={saveTPSL} disabled={saving}>
+                {saving ? '...' : '💾 Сохранить TP/SL'}
+              </button>
+            </div>
+
+            {/* Частичное закрытие */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-text-secondary">Частичное закрытие</p>
+              <div className="flex items-center gap-3">
+                <input type="range" min={5} max={100} step={5} value={closeQty}
+                  onChange={(e) => setCloseQty(Number(e.target.value))} className="flex-1 accent-loss" />
+                <span className="num text-sm font-bold text-white w-12 text-right">{closeQty}%</span>
+              </div>
+              <p className="text-xs text-text-muted text-center">
+                Закрыть {((closeQty / 100) * size).toFixed(3)} из {size}
+              </p>
+              <div className="flex gap-1">
+                {[25, 50, 75, 100].map((pct) => (
+                  <button key={pct} className="flex-1 py-1.5 rounded-lg text-xs font-semibold"
+                    style={{ background: closeQty === pct ? 'rgba(255,71,87,0.3)' : 'rgba(255,71,87,0.1)', color: '#FF4757' }}
+                    onClick={() => setCloseQty(pct)}>{pct}%</button>
+                ))}
+              </div>
+              <button className="w-full py-2 rounded-xl text-xs font-bold"
+                style={{ background: 'rgba(255,71,87,0.15)', color: '#FF4757' }}
+                onClick={partialClose} disabled={saving}>
+                {saving ? '...' : `✕ Закрыть ${closeQty}%`}
+              </button>
+            </div>
+
+            {msg && (
+              <p className="text-xs text-center font-semibold"
+                style={{ color: msg.startsWith('✅') ? '#00D4AA' : '#FF4757' }}>{msg}</p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
 
-function OrderRow({ order }: { order: Order }) {
+// ── OrderRow ──────────────────────────────────────────────────────────────────
+
+function OrderRow({ order, challengeId, onCancelled }: { order: Order; challengeId: number; onCancelled: () => void }) {
+  const [cancelling, setCancelling] = useState(false)
+  const cancel = async () => {
+    setCancelling(true)
+    try { await tradingApi.cancelOrder(order.order_id, challengeId, order.symbol); onCancelled() } catch {}
+    setCancelling(false)
+  }
   return (
     <div className="glass-card p-3 flex items-center justify-between">
       <div className="flex items-center gap-2">
         <span className={`text-xs px-2 py-0.5 rounded font-bold ${order.side === 'Buy' ? 'text-profit bg-profit/10' : 'text-loss bg-loss/10'}`}>
           {order.side}
         </span>
-        <span className="text-sm font-semibold text-white">{order.symbol}</span>
-        <span className="text-xs text-text-muted">{order.order_type}</span>
+        <div>
+          <span className="text-sm font-semibold text-white">{order.symbol}</span>
+          <div className="text-xs text-text-muted">{order.order_type}</div>
+        </div>
       </div>
-      <div className="text-right">
-        <div className="num text-xs text-white">{order.price ? `$${order.price.toFixed(2)}` : 'Market'}</div>
-        <div className="num text-xs text-text-muted">{order.qty}</div>
+      <div className="flex items-center gap-3">
+        <div className="text-right">
+          <div className="num text-xs text-white">{order.price ? `$${order.price.toFixed(2)}` : 'Market'}</div>
+          <div className="num text-xs text-text-muted">{order.qty}</div>
+        </div>
+        <button className="px-2 py-1.5 rounded-lg text-xs font-semibold"
+          style={{ background: 'rgba(255,71,87,0.15)', color: '#FF4757' }}
+          onClick={cancel} disabled={cancelling}>{cancelling ? '...' : '✕'}</button>
       </div>
+    </div>
+  )
+}
+
+// ── Поле ввода ────────────────────────────────────────────────────────────────
+
+function OrderInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <div className="space-y-1">
+      <label className="text-text-secondary text-xs">{label}</label>
+      <input type="number" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+        className="w-full bg-bg-border border border-bg-border rounded-xl px-3 py-2.5 text-white text-sm num focus:outline-none focus:border-brand-primary/50"
+        inputMode="decimal" />
     </div>
   )
 }

@@ -120,6 +120,10 @@ export const tradingApi = {
     del<object>(`/trading/order/${orderId}`, { challenge_id: challengeId, symbol }),
   closeAllPositions: (challengeId: number) =>
     del<object[]>('/trading/positions/all', { challenge_id: challengeId }),
+  modifyTradingStop: (data: { challenge_id: number; symbol: string; take_profit?: string; stop_loss?: string }) =>
+    post<object>('/trading/position/modify', data),
+  partialClose: (data: { challenge_id: number; symbol: string; side: string; qty: string }) =>
+    post<object>('/trading/position/partial-close', data),
   getHistory: (challengeId: number, params?: { cursor?: number; limit?: number; side?: string; symbol?: string }) =>
     get<TradeHistoryPage>('/trading/history', {
       challenge_id: challengeId,

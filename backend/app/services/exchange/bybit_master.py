@@ -1,13 +1,17 @@
 """
 Bybit Master Account Client — управление суб-аккаунтами, переводы, создание API ключей.
-Используется только backend-сервисами, никогда трейдерами.
+Используется только backend-сервисами, никогда трейдерами напрямую.
+
+Два режима:
+  mode="demo"  — работает с api-demo.bybit.com, использует bybit_demo_master_api_key
+  mode="real"  — работает с api.bybit.com, использует bybit_master_api_key
 """
 import hashlib
 import hmac
 import json as json_lib
 import time
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import httpx
 from loguru import logger
@@ -20,24 +24,24 @@ class BybitMasterClient:
     """
     Master-аккаунт Bybit для управления суб-аккаунтами и переводами.
 
-    Возможности:
-    - Создание demo-участников (Demo Trading)
-    - Создание real суб-аккаунтов
-    - Создание API-ключей (без права вывода)
-    - Переводы между master и суб-аккаунтами
-    - Мониторинг баланса master кошелька
+    mode="demo"  → api-demo.bybit.com  (challenge phase, virtual USDT)
+    mode="real"  → api.bybit.com       (funded phase, real USDT)
     """
 
-    def __init__(self):
-        self.api_key = settings.bybit_master_api_key
-        self.api_secret = settings.bybit_master_api_secret
-        # Demo environment credentials — created at demo.bybit.com → API Management.
-        # These are completely separate from real account keys.
-        # If not set, fallback to real keys (demo top-up will be skipped gracefully).
-        self.demo_api_key = settings.bybit_demo_master_api_key or settings.bybit_master_api_key
-        self.demo_api_secret = settings.bybit_demo_master_api_secret or settings.bybit_master_api_secret
+    def __init__(self, mode: Literal["demo", "real"] = "real"):
+        self.mode = mode
+        if mode == "demo":
+            # Если demo-ключи не заданы — fallback на основные (для разработки)
+            self.api_key = settings.bybit_demo_master_api_key or settings.bybit_master_api_key
+            self.api_secret = settings.bybit_demo_master_api_secret or settings.bybit_master_api_secret
+            base_url = settings.bybit_demo_base_url
+        else:
+            self.api_key = settings.bybit_master_api_key
+            self.api_secret = settings.bybit_master_api_secret
+            base_url = settings.bybit_real_base_url
+
         self._client = httpx.AsyncClient(
-            base_url=settings.bybit_real_base_url,
+            base_url=base_url,
             timeout=15.0,
             headers={"Content-Type": "application/json"},
         )
@@ -109,9 +113,7 @@ class BybitMasterClient:
         balance = await self.get_master_balance()
         min_balance = Decimal(str(settings.bybit_master_min_balance))
         if balance < min_balance:
-            logger.warning(
-                f"Master balance {balance} USDT is below minimum {min_balance} USDT!"
-            )
+            logger.warning(f"Master balance {balance} USDT is below minimum {min_balance} USDT!")
             return False
         return True
 
@@ -120,48 +122,42 @@ class BybitMasterClient:
     async def create_sub_account(
         self,
         username: str,
-        password: Optional[str] = None,
         is_uta: bool = True,
         note: Optional[str] = None,
     ) -> dict[str, Any]:
         """
-        Создаёт реальный суб-аккаунт.
+        Создаёт суб-аккаунт (в текущем mode: demo или real).
         Returns: {"uid": str, "username": str, ...}
         """
-        import secrets
-        import string
-        if password is None:
-            alphabet = string.ascii_letters + string.digits + "!@#$"
-            password = "".join(secrets.choice(alphabet) for _ in range(16))
-
         body: dict[str, Any] = {
             "username": username,
             "memberType": 1,  # 1 = normal sub-member
-            "note": note or f"CHM_KRYPTON trader account",
+            "note": note or "CHM KRYPTON trader account",
         }
         if is_uta:
             body["accountType"] = "UNIFIED"
 
         data = await self._post("/v5/user/create-sub-member", body)
-        logger.info(f"Sub-account created: uid={data['result'].get('uid')}")
+        uid = data["result"].get("uid")
+        logger.info(f"[{self.mode}] Sub-account created: uid={uid}, username={username}")
         return data["result"]
 
     async def create_sub_api_key(
         self,
         sub_uid: str,
         permissions: Optional[dict] = None,
-        note: str = "CHM_KRYPTON Trading Key",
+        note: str = "CHM KRYPTON Trading Key",
         read_only: bool = False,
     ) -> dict[str, Any]:
         """
         Создаёт API ключ для суб-аккаунта.
-        Права: Trade + Position, НЕТ прав на вывод (Withdrawal всегда 0).
+        Права: Trade + Position, НЕТ прав на вывод.
         Returns: {"id": str, "apiKey": str, "secret": str, ...}
         """
         if permissions is None:
             permissions = {
                 "ContractTrade": ["Order", "Position"],
-                "Wallet": ["AccountTransfer"],  # разрешаем только internal transfer
+                "Wallet": ["AccountTransfer"],
             }
 
         body = {
@@ -172,99 +168,55 @@ class BybitMasterClient:
         }
         data = await self._post("/v5/user/create-sub-api", body)
         result = data["result"]
-        logger.info(f"API key created for sub_uid={sub_uid}: key={result.get('apiKey')[:8]}...")
+        logger.info(f"[{self.mode}] API key created for sub_uid={sub_uid}: key={result.get('apiKey', '')[:8]}...")
         return result
 
-    # ─── Demo Trading ─────────────────────────────────────────────────────────
+    # ─── Demo balance — вызывается от имени суб-аккаунта ──────────────────────
 
-    async def create_demo_account(self, uid: str) -> dict[str, Any]:
-        """
-        Активирует demo trading для суб-аккаунта.
-        Bybit Demo Trading использует отдельный endpoint и base URL.
-        """
-        # Для Demo Trading используем специальный endpoint
-        body = {"uid": uid}
-        # Note: Demo accounts на Bybit создаются через специальный UI
-        # API для создания demo sub-accounts: использует demo base URL
-        demo_client = httpx.AsyncClient(
-            base_url=settings.bybit_demo_base_url,
-            timeout=10.0,
-            headers={"Content-Type": "application/json"},
-        )
-        try:
-            body_str = json_lib.dumps(body, separators=(",", ":"))
-            timestamp = str(int(time.time() * 1000))
-            recv_window = "5000"
-            sign_str = f"{timestamp}{self.api_key}{recv_window}{body_str}"
-            signature = hmac.new(
-                self.api_secret.encode("utf-8"),
-                sign_str.encode("utf-8"),
-                hashlib.sha256,
-            ).hexdigest()
-            headers = {
-                "X-BAPI-API-KEY": self.api_key,
-                "X-BAPI-TIMESTAMP": timestamp,
-                "X-BAPI-SIGN": signature,
-                "X-BAPI-RECV-WINDOW": recv_window,
-                "Content-Type": "application/json",
-            }
-            resp = await demo_client.post("/v5/user/create-sub-member", content=body_str, headers=headers)
-            data = resp.json()
-        finally:
-            await demo_client.aclose()
-        return data.get("result", {})
-
-    async def top_up_demo_balance(
+    async def top_up_demo_balance_as_sub(
         self,
-        uid: str,
+        sub_api_key: str,
+        sub_api_secret: str,
         amount: str = "10000",
         coin: str = "USDT",
     ) -> dict[str, Any]:
         """
-        Пополняет demo баланс через Bybit Demo Trading API.
-        Требует DEMO API ключи (создаются на demo.bybit.com → API Management).
-        https://bybit-exchange.github.io/docs/v5/demo
-        """
-        if not settings.bybit_demo_master_api_key:
-            logger.warning(
-                "BYBIT_DEMO_MASTER_API_KEY not set — skipping demo balance top-up. "
-                "Create demo API keys at demo.bybit.com and set them in .env"
-            )
-            return {}
+        Пополняет demo баланс суб-аккаунта.
 
-        demo_client = httpx.AsyncClient(
-            base_url=settings.bybit_demo_base_url,
-            timeout=10.0,
-        )
-        try:
-            body = {"adjustType": 0, "utaWalletBalance": amount, "coin": coin}
-            body_str = json_lib.dumps(body, separators=(",", ":"))
-            timestamp = str(int(time.time() * 1000))
-            recv_window = "5000"
-            # Use demo credentials, not real ones
-            sign_str = f"{timestamp}{self.demo_api_key}{recv_window}{body_str}"
-            signature = hmac.new(
-                self.demo_api_secret.encode("utf-8"),
-                sign_str.encode("utf-8"),
-                hashlib.sha256,
-            ).hexdigest()
-            headers = {
-                "X-BAPI-API-KEY": self.demo_api_key,
-                "X-BAPI-TIMESTAMP": timestamp,
-                "X-BAPI-SIGN": signature,
-                "X-BAPI-RECV-WINDOW": recv_window,
-                "Content-Type": "application/json",
-            }
-            resp = await demo_client.post(
-                "/v5/account/demo-apply-money",
-                content=body_str,
-                headers=headers,
-            )
+        ВАЖНО: Bybit's /v5/account/demo-apply-money — это self-service endpoint.
+        Он должен вызываться с учётными данными СУММЫ самого аккаунта (не master).
+        Поэтому здесь мы создаём временный клиент с ключами суб-аккаунта.
+        """
+        timestamp = str(int(time.time() * 1000))
+        recv_window = "5000"
+        body = {"adjustType": 0, "utaWalletBalance": amount, "coin": coin}
+        body_str = json_lib.dumps(body, separators=(",", ":"))
+
+        sign_str = f"{timestamp}{sub_api_key}{recv_window}{body_str}"
+        signature = hmac.new(
+            sub_api_secret.encode("utf-8"),
+            sign_str.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        headers = {
+            "X-BAPI-API-KEY": sub_api_key,
+            "X-BAPI-TIMESTAMP": timestamp,
+            "X-BAPI-SIGN": signature,
+            "X-BAPI-RECV-WINDOW": recv_window,
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(base_url=settings.bybit_demo_base_url, timeout=10.0) as client:
+            resp = await client.post("/v5/account/demo-apply-money", content=body_str, headers=headers)
+            resp.raise_for_status()
             data = resp.json()
-            logger.info(f"Demo balance top-up for uid={uid}: {amount} {coin}, response: {data.get('retCode')}")
-            return data.get("result", {})
-        finally:
-            await demo_client.aclose()
+
+        if data.get("retCode", 0) != 0:
+            raise BybitAPIError(data["retCode"], data.get("retMsg", ""), data)
+
+        logger.info(f"Demo balance top-up: {amount} {coin} (via sub-account credentials)")
+        return data.get("result", {})
 
     # ─── Переводы между аккаунтами ────────────────────────────────────────────
 
@@ -278,6 +230,7 @@ class BybitMasterClient:
     ) -> dict[str, Any]:
         """
         Внутренний перевод средств на суб-аккаунт funded трейдера.
+        Используется только в mode="real".
         """
         import uuid
         transfer_id = str(uuid.uuid4())
@@ -316,91 +269,88 @@ class BybitMasterClient:
         username_prefix: str,
     ) -> dict[str, Any]:
         """
-        Полный процесс создания Demo счёта для испытания:
-        1. Создаём суб-аккаунт (real API)
-        2. Создаём API ключи (real API)
-        3. Пополняем demo баланс (demo API) — опционально, требует BYBIT_DEMO_MASTER_API_KEY
-        Returns: {
-            "account_id": str,
-            "api_key": str,
-            "api_secret": str,
-            "demo_funded": bool,
-        }
-        ВАЖНО: Для пополнения demo-баланса нужны отдельные ключи от demo.bybit.com.
-        Без них суб-аккаунт создаётся, но трейдеру придётся вручную запросить
-        demo-баланс в приложении Bybit (Demo Trading → Apply for funds).
+        Создаёт Demo суб-аккаунт для испытания на Bybit Demo Trading.
+
+        Должен вызываться с mode="demo" (клиент работает с api-demo.bybit.com
+        используя demo master credentials).
+
+        Шаги:
+        1. Создаём demo суб-аккаунт (через demo master)
+        2. Создаём API ключи для demo суб-аккаунта (через demo master)
+        3. Пополняем demo баланс используя КЛЮЧИ СУБ-АККАУНТА (self-service)
+
+        Returns: {"account_id": str, "api_key": str, "api_secret": str}
         """
         import secrets
         suffix = secrets.token_hex(4).upper()
         username = f"{username_prefix}_{suffix}"
 
-        # 1. Создать суб-аккаунт (real Bybit API)
+        # 1. Создать demo суб-аккаунт
         sub = await self.create_sub_account(username=username)
         sub_uid = str(sub["uid"])
 
-        # 2. Создать API ключи (real Bybit API)
+        # 2. Создать API ключи для суб-аккаунта
         api_result = await self.create_sub_api_key(
             sub_uid=sub_uid,
-            note=f"CHM_KRYPTON Demo {username}",
+            note=f"CHM KRYPTON Demo Challenge {username}",
         )
+        sub_api_key = api_result["apiKey"]
+        sub_api_secret = api_result["secret"]
 
-        # 3. Пополнить demo баланс (опционально — требует demo API keys)
-        demo_funded = False
-        try:
-            result = await self.top_up_demo_balance(uid=sub_uid, amount=str(account_size))
-            demo_funded = bool(result)
-        except Exception as e:
-            logger.warning(
-                f"Demo balance top-up skipped for uid={sub_uid}: {e}. "
-                f"Trader must apply for demo funds manually in Bybit app."
-            )
+        # 3. Пополнить demo баланс от имени суб-аккаунта
+        #    (demo-apply-money — self-service endpoint, не работает с master credentials)
+        await self.top_up_demo_balance_as_sub(
+            sub_api_key=sub_api_key,
+            sub_api_secret=sub_api_secret,
+            amount=str(int(account_size)),
+        )
 
         logger.info(
             f"Demo challenge account ready: uid={sub_uid}, "
-            f"balance={account_size} USDT, demo_funded={demo_funded}"
+            f"username={username}, balance={account_size} USDT"
         )
         return {
             "account_id": sub_uid,
-            "username": username,
-            "api_key": api_result["apiKey"],
-            "api_secret": api_result["secret"],
-            "demo_funded": demo_funded,
+            "api_key": sub_api_key,
+            "api_secret": sub_api_secret,
         }
+
+    # ─── Полный процесс создания Funded аккаунта ──────────────────────────────
 
     async def setup_funded_account(
         self,
         account_size: Decimal,
         username_prefix: str,
-        max_leverage: int = 50,
     ) -> dict[str, Any]:
         """
-        Полный процесс создания Real funded счёта:
-        1. Создаём real суб-аккаунт
-        2. Переводим реальные USDT с master
-        3. Создаём API ключи (без прав на вывод)
-        Returns: {
-            "account_id": str,
-            "api_key": str,
-            "api_secret": str,
-        }
+        Создаёт реальный funded суб-аккаунт с переводом USDT.
+
+        Должен вызываться с mode="real".
+
+        Шаги:
+        1. Проверяем баланс master
+        2. Создаём real суб-аккаунт
+        3. Переводим USDT с master
+        4. Создаём API ключи (без прав на вывод)
+
+        Returns: {"account_id": str, "api_key": str, "api_secret": str}
         """
         import secrets
         suffix = secrets.token_hex(4).upper()
         username = f"{username_prefix}_F_{suffix}"
 
         # 1. Проверяем баланс master
-        ok = await self.check_master_balance()
-        if not ok:
+        if not await self.check_master_balance():
             raise ValueError("Master balance is below minimum threshold")
 
-        # 2. Создать суб-аккаунт
+        # 2. Создать real суб-аккаунт
         sub = await self.create_sub_account(
             username=username,
-            note=f"CHM_KRYPTON Funded Account",
+            note="CHM KRYPTON Funded Account",
         )
         sub_uid = str(sub["uid"])
 
-        # 3. Перевести средства
+        # 3. Перевести реальные средства
         await self.internal_transfer(
             amount=str(account_size),
             coin="USDT",
@@ -410,12 +360,12 @@ class BybitMasterClient:
         # 4. Создать API ключи
         api_result = await self.create_sub_api_key(
             sub_uid=sub_uid,
-            note=f"CHM_KRYPTON Funded {username}",
+            note=f"CHM KRYPTON Funded {username}",
         )
 
         logger.info(
             f"Funded account ready: uid={sub_uid}, "
-            f"balance={account_size} USDT"
+            f"username={username}, balance={account_size} USDT"
         )
         return {
             "account_id": sub_uid,
