@@ -1,11 +1,10 @@
 /**
  * ChallengesPage — выбор и покупка испытания.
- * После оплаты план становится pending_payment — активируется только после подтверждения администратором.
  */
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
-import { challengesApi, type ChallengeType } from '@/api/client'
+import { challengesApi, type ChallengeType, type UserChallenge, type BybitCredentials } from '@/api/client'
 import { ChallengeCard } from '@/components/ui/ChallengeCard'
 import { BottomSheet } from '@/components/ui/BottomSheet'
 import { CardSkeleton } from '@/components/ui/LoadingSkeleton'
@@ -17,10 +16,22 @@ export function ChallengesPage() {
   const [selected, setSelected] = useState<ChallengeType | null>(null)
   const [showConfirm, setShowConfirm] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
+  const [purchaseResult, setPurchaseResult] = useState<UserChallenge | null>(null)
   const [purchaseError, setPurchaseError] = useState('')
+  const [credentials, setCredentials] = useState<BybitCredentials | null>(null)
+  const [showCreds, setShowCreds] = useState(false)
+  const [activating, setActivating] = useState(false)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const setActiveChallenge = useAppStore((s) => s.setActiveChallenge)
+
+  const copyToClipboard = (value: string, key: string) => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopiedKey(key)
+      setTimeout(() => setCopiedKey(null), 2000)
+    })
+  }
 
   const { data: types = [], isLoading } = useQuery({
     queryKey: ['challenge-types'],
@@ -37,9 +48,9 @@ export function ChallengesPage() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['my-challenges'] })
       setPurchaseError('')
+      setPurchaseResult(result)
       setShowConfirm(false)
       setShowSuccess(true)
-      // Auto-set active challenge if status is active
       if (result && ['phase1', 'phase2', 'funded'].includes(result.status)) {
         setActiveChallenge(result)
       }
@@ -271,43 +282,199 @@ export function ChallengesPage() {
         )}
       </BottomSheet>
 
-      {/* ── Success sheet (pending_payment created) ── */}
+      {/* ── Success / Activation sheet ── */}
       <BottomSheet
         isOpen={showSuccess}
-        onClose={() => setShowSuccess(false)}
-        title="Заявка создана!"
+        onClose={() => { setShowSuccess(false); setShowCreds(false); setCredentials(null) }}
+        title={purchaseResult?.status === 'phase1' ? 'Аккаунт активирован! 🎉' : 'Аккаунт создан!'}
       >
         <div className="p-5 space-y-4">
-          <div className="text-center">
-            <div className="flex justify-center mb-3">
-              <ClockIcon size={56} color="#6C63FF" />
-            </div>
-            <h3 className="text-lg font-bold text-white">Ожидаем подтверждения</h3>
-            <p className="text-text-secondary text-sm mt-2">
-              Заявка принята. Отправьте скриншот оплаты в бот — администраторы активируют испытание после проверки транзакции.
-            </p>
-          </div>
+          {purchaseResult?.status === 'phase1' ? (
+            /* ── ACTIVE: show two trading options ── */
+            <>
+              <div className="text-center">
+                <div className="flex justify-center mb-3">
+                  <AnimatedCheckIcon size={56} color="#00D4AA" />
+                </div>
+                <h3 className="text-lg font-bold text-white">Торговый аккаунт готов</h3>
+                <p className="text-text-secondary text-sm mt-1">
+                  Bybit Demo счёт пополнен на{' '}
+                  <span className="text-profit font-bold">
+                    ${purchaseResult.initial_balance?.toLocaleString()}
+                  </span>
+                </p>
+              </div>
 
-          <div
-            className="rounded-2xl p-4"
-            style={{ background: 'rgba(108,99,255,0.08)', border: '1px solid rgba(108,99,255,0.25)' }}
-          >
-            <p className="text-xs text-text-secondary mb-2 font-semibold">Следующий шаг:</p>
-            <p className="text-sm text-white">
-              Откройте бот{' '}
-              <span className="font-bold text-profit">@{botUsername}</span>{' '}
-              и отправьте скриншот перевода USDT.
-            </p>
-          </div>
+              {/* Two trading options */}
+              <div className="grid grid-cols-1 gap-3">
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-3"
+                  style={{ background: 'linear-gradient(135deg, #6C63FF, #5A52E0)' }}
+                  onClick={() => { setShowSuccess(false); navigate('/terminal') }}
+                >
+                  <span className="text-xl">⚡</span>
+                  <div className="text-left">
+                    <div>Торговать в приложении</div>
+                    <div className="text-xs font-normal opacity-75">Встроенный терминал</div>
+                  </div>
+                </motion.button>
 
-          <motion.button
-            className="w-full py-4 rounded-2xl font-bold text-white"
-            style={{ background: 'linear-gradient(135deg, #6C63FF, #00D4AA)' }}
-            onClick={() => { setShowSuccess(false); navigate('/dashboard') }}
-            whileTap={{ scale: 0.97 }}
-          >
-            Понятно
-          </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  className="w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-3"
+                  style={{
+                    background: 'rgba(255,165,2,0.12)',
+                    border: '1px solid rgba(255,165,2,0.35)',
+                    color: '#FFA502',
+                  }}
+                  onClick={async () => {
+                    if (credentials) { setShowCreds(true); return }
+                    try {
+                      const creds = await challengesApi.getCredentials(purchaseResult.id)
+                      setCredentials(creds)
+                      setShowCreds(true)
+                    } catch {
+                      setShowCreds(true)
+                    }
+                  }}
+                >
+                  <span className="text-xl">🔗</span>
+                  <div className="text-left">
+                    <div>Торговать на Bybit Demo</div>
+                    <div className="text-xs font-normal opacity-75">Получить API ключи</div>
+                  </div>
+                </motion.button>
+              </div>
+
+              {/* Credentials panel */}
+              <AnimatePresence>
+                {showCreds && credentials && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="rounded-2xl overflow-hidden"
+                    style={{ background: 'rgba(255,165,2,0.06)', border: '1px solid rgba(255,165,2,0.25)' }}
+                  >
+                    <div className="p-4 space-y-3">
+                      <p className="text-xs font-bold text-white uppercase tracking-wide">
+                        Данные для Bybit Demo
+                      </p>
+                      {([
+                        { label: 'API Key', value: credentials.api_key, key: 'key' },
+                        { label: 'API Secret', value: credentials.api_secret, key: 'secret' },
+                        { label: 'Sub UID', value: credentials.sub_uid, key: 'uid' },
+                      ] as const).map(({ label, value, key }) => (
+                        <div key={key} className="space-y-1">
+                          <p className="text-xs text-text-muted">{label}</p>
+                          <div className="flex items-center gap-2">
+                            <code
+                              className="flex-1 text-xs text-white bg-bg-border rounded-lg px-3 py-2 truncate"
+                            >
+                              {value}
+                            </code>
+                            <button
+                              className="shrink-0 px-3 py-2 rounded-lg text-xs font-bold"
+                              style={{
+                                background: copiedKey === key ? 'rgba(0,212,170,0.2)' : 'rgba(108,99,255,0.2)',
+                                color: copiedKey === key ? '#00D4AA' : '#6C63FF',
+                              }}
+                              onClick={() => copyToClipboard(value, key)}
+                            >
+                              {copiedKey === key ? '✓' : 'Копировать'}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      <div
+                        className="rounded-xl p-3 text-xs text-text-secondary space-y-1"
+                        style={{ background: 'rgba(255,255,255,0.04)' }}
+                      >
+                        <p className="font-semibold text-white">Как подключить:</p>
+                        <p>1. Перейди на <span className="text-profit">testnet.bybit.com</span></p>
+                        <p>2. API Management → Добавить ключ</p>
+                        <p>3. Введи API Key + Secret</p>
+                        <p>4. Все сделки будут учитываться в испытании</p>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                className="w-full py-3 rounded-2xl text-sm text-text-secondary"
+                style={{ background: 'rgba(255,255,255,0.05)' }}
+                onClick={() => { setShowSuccess(false); navigate('/dashboard') }}
+              >
+                Перейти на главную
+              </motion.button>
+            </>
+          ) : (
+            /* ── PENDING: offer self-activation ── */
+            <>
+              <div className="text-center">
+                <div className="flex justify-center mb-3 text-5xl">⏳</div>
+                <h3 className="text-lg font-bold text-white">Нужна активация аккаунта</h3>
+                <p className="text-text-secondary text-sm mt-2">
+                  Bybit временно недоступен. Нажмите кнопку ниже — система создаст ваш торговый аккаунт.
+                </p>
+              </div>
+
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2"
+                style={{ background: 'linear-gradient(135deg, #6C63FF, #00D4AA)' }}
+                disabled={activating}
+                onClick={async () => {
+                  if (!purchaseResult) return
+                  setActivating(true)
+                  try {
+                    const updated = await challengesApi.activateSelf(purchaseResult.id)
+                    setPurchaseResult(updated)
+                    setActiveChallenge(updated)
+                    queryClient.invalidateQueries({ queryKey: ['my-challenges'] })
+                  } catch (e: any) {
+                    setPurchaseError(e?.response?.data?.detail ?? 'Попробуйте ещё раз через минуту')
+                  } finally {
+                    setActivating(false)
+                  }
+                }}
+              >
+                {activating ? (
+                  <><SpinnerIcon size={20} /><span>Создаём аккаунт...</span></>
+                ) : (
+                  <><span>🔗</span><span>Активировать торговый аккаунт</span></>
+                )}
+              </motion.button>
+
+              {purchaseError && (
+                <p className="text-loss text-xs text-center">{purchaseError}</p>
+              )}
+
+              <div
+                className="rounded-2xl p-4"
+                style={{ background: 'rgba(108,99,255,0.08)', border: '1px solid rgba(108,99,255,0.25)' }}
+              >
+                <p className="text-xs text-text-secondary mb-1 font-semibold">Или обратитесь в поддержку:</p>
+                <p className="text-sm text-white">
+                  Бот{' '}
+                  <span className="font-bold text-profit">@{botUsername}</span>{' '}
+                  — активируем вручную в течение нескольких минут.
+                </p>
+              </div>
+
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                className="w-full py-3 rounded-2xl text-sm text-text-secondary"
+                style={{ background: 'rgba(255,255,255,0.05)' }}
+                onClick={() => { setShowSuccess(false); navigate('/dashboard') }}
+              >
+                Перейти на главную
+              </motion.button>
+            </>
+          )}
         </div>
       </BottomSheet>
     </div>

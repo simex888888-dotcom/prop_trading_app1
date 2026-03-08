@@ -103,6 +103,10 @@ export const challengesApi = {
   getViolations: (id: number) => get<Violation[]>(`/challenges/${id}/violations`),
   purchase: (challengeTypeId: number) =>
     post<UserChallenge>('/challenges/purchase', { challenge_type_id: challengeTypeId }),
+  getCredentials: (challengeId: number) =>
+    get<BybitCredentials>(`/challenges/${challengeId}/credentials`),
+  activateSelf: (challengeId: number) =>
+    post<UserChallenge>(`/challenges/${challengeId}/activate-self`, {}),
   getAccountDetails: (challengeId: number) =>
     get<AccountDetails>(`/challenges/${challengeId}/account-details`),
 }
@@ -235,6 +239,15 @@ export interface UserChallenge {
   funded_at?: string
   failed_at?: string
   failed_reason?: string
+}
+
+export interface BybitCredentials {
+  api_key: string
+  api_secret: string
+  sub_uid: string
+  exchange: string
+  base_url: string
+  demo_url: string
 }
 
 export interface ChallengeRules {
