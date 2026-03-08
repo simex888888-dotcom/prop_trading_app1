@@ -392,7 +392,12 @@ async def activate_challenge_self(
     from app.services.exchange.bybit_master import BybitMasterClient
     from app.core.security import encrypt_aes256 as enc
 
-    master = BybitMasterClient(mode="demo")
+    try:
+        master = BybitMasterClient(mode="demo")
+    except ValueError as cfg_err:
+        logger.error(f"Bybit Demo keys not configured: {cfg_err}")
+        raise HTTPException(status_code=503, detail=str(cfg_err))
+
     try:
         demo_account = await master.setup_demo_challenge_account(
             account_size=challenge.initial_balance,

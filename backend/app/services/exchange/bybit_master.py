@@ -31,9 +31,14 @@ class BybitMasterClient:
     def __init__(self, mode: Literal["demo", "real"] = "real"):
         self.mode = mode
         if mode == "demo":
-            # Если demo-ключи не заданы — fallback на основные (для разработки)
-            self.api_key = settings.bybit_demo_master_api_key or settings.bybit_master_api_key
-            self.api_secret = settings.bybit_demo_master_api_secret or settings.bybit_master_api_secret
+            self.api_key = settings.bybit_demo_master_api_key
+            self.api_secret = settings.bybit_demo_master_api_secret
+            if not self.api_key or not self.api_secret:
+                raise ValueError(
+                    "Bybit Demo API ключи не настроены. "
+                    "Задайте BYBIT_DEMO_MASTER_API_KEY и BYBIT_DEMO_MASTER_API_SECRET "
+                    "в переменных окружения."
+                )
             base_url = settings.bybit_demo_base_url
         else:
             self.api_key = settings.bybit_master_api_key
