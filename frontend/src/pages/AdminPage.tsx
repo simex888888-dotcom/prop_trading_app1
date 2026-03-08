@@ -616,6 +616,47 @@ function TestingTab() {
               </button>
             </div>
           </div>
+
+          {/* Bybit actions */}
+          <div className="border-t border-bg-border pt-3 space-y-2">
+            <p className="text-xs text-text-muted">Bybit / системные действия:</p>
+            <button
+              className="w-full py-2.5 rounded-xl text-xs font-bold text-left px-3"
+              style={{ background: 'rgba(108,99,255,0.15)', color: '#6C63FF' }}
+              onClick={async () => {
+                setLoading(true)
+                try {
+                  const res = await adminPost<{ bybit_uid: string }>(`/admin/challenges/${selectedChallenge.id}/activate-bybit`, {})
+                  msg(`Bybit аккаунт создан: uid=${res.bybit_uid}`)
+                  const updated = { ...selectedChallenge, status: 'phase1' }
+                  setSelectedChallenge(updated)
+                  setUserChallenges(prev => prev.map(c => c.id === updated.id ? updated : c))
+                } catch (e: any) { msg(e?.response?.data?.detail ?? 'Ошибка Bybit API', true) }
+                finally { setLoading(false) }
+              }}
+              disabled={loading}
+            >
+              🔗 Создать Bybit аккаунт и активировать
+            </button>
+            <button
+              className="w-full py-2.5 rounded-xl text-xs font-bold text-left px-3"
+              style={{ background: 'rgba(255,71,87,0.08)', color: '#FF4757' }}
+              onClick={async () => {
+                if (!confirm(`Удалить испытание #${selectedChallenge.id}? Это необратимо.`)) return
+                setLoading(true)
+                try {
+                  await apiClient.delete(`/admin/challenges/${selectedChallenge.id}`)
+                  msg(`Испытание #${selectedChallenge.id} удалено`)
+                  setSelectedChallenge(null)
+                  setUserChallenges(prev => prev.filter(c => c.id !== selectedChallenge.id))
+                } catch (e: any) { msg(e?.response?.data?.detail ?? 'Ошибка удаления', true) }
+                finally { setLoading(false) }
+              }}
+              disabled={loading}
+            >
+              🗑 Удалить испытание #{selectedChallenge.id}
+            </button>
+          </div>
         </div>
       )}
 

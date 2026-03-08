@@ -162,6 +162,9 @@ async def purchase_challenge(
 
     # Создаём demo суб-аккаунт на Bybit Demo Trading (api-demo.bybit.com)
     from app.services.exchange.bybit_master import BybitMasterClient
+    now = datetime.now(timezone.utc)
+    demo_account: dict | None = None
+
     master = BybitMasterClient(mode="demo")
     try:
         demo_account = await master.setup_demo_challenge_account(
@@ -170,34 +173,49 @@ async def purchase_challenge(
         )
     except Exception as e:
         logger.error(f"Failed to create Bybit demo account for user {user.id}: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail=f"Не удалось создать demo аккаунт: {str(e)}",
-        )
+        # Fallback: create challenge with pending_payment so admin can activate manually
+        demo_account = None
     finally:
         await master.close()
 
-    now = datetime.now(timezone.utc)
-    challenge = UserChallenge(
-        user_id=user.id,
-        challenge_type_id=ct.id,
-        status=ChallengeStatus.phase1,
-        phase=1,
-        account_mode="demo",
-        exchange="bybit",
-        demo_account_id=demo_account["account_id"],
-        demo_api_key_enc=encrypt_aes256(demo_account["api_key"]),
-        demo_api_secret_enc=encrypt_aes256(demo_account["api_secret"]),
-        initial_balance=ct.account_size,
-        current_balance=ct.account_size,
-        peak_equity=ct.account_size,
-        daily_start_balance=ct.account_size,
-        daily_pnl=Decimal("0"),
-        total_pnl=Decimal("0"),
-        trading_days_count=0,
-        started_at=now,
-        daily_reset_at=now,
-    )
+    if demo_account:
+        challenge = UserChallenge(
+            user_id=user.id,
+            challenge_type_id=ct.id,
+            status=ChallengeStatus.phase1,
+            phase=1,
+            account_mode="demo",
+            exchange="bybit",
+            demo_account_id=demo_account["account_id"],
+            demo_api_key_enc=encrypt_aes256(demo_account["api_key"]),
+            demo_api_secret_enc=encrypt_aes256(demo_account["api_secret"]),
+            initial_balance=ct.account_size,
+            current_balance=ct.account_size,
+            peak_equity=ct.account_size,
+            daily_start_balance=ct.account_size,
+            daily_pnl=Decimal("0"),
+            total_pnl=Decimal("0"),
+            trading_days_count=0,
+            started_at=now,
+            daily_reset_at=now,
+        )
+    else:
+        # Bybit API unavailable — create pending challenge for admin to activate
+        challenge = UserChallenge(
+            user_id=user.id,
+            challenge_type_id=ct.id,
+            status=ChallengeStatus.pending_payment,
+            phase=1,
+            account_mode="demo",
+            exchange="bybit",
+            initial_balance=ct.account_size,
+            current_balance=ct.account_size,
+            peak_equity=ct.account_size,
+            daily_start_balance=ct.account_size,
+            daily_pnl=Decimal("0"),
+            total_pnl=Decimal("0"),
+            trading_days_count=0,
+        )
     session.add(challenge)
 
     # Обновляем роль пользователя

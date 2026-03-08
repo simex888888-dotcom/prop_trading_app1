@@ -713,6 +713,59 @@ class AddPnlRequest(BaseModel):
     add_day: bool = True
 
 
+# ─── Активация pending испытания через Bybit ──────────────────────────────────
+
+@router.post("/challenges/{challenge_id}/activate-bybit", response_model=APIResponse[dict])
+async def activate_challenge_bybit(
+    challenge_id: int,
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[dict]:
+    """
+    Создать Bybit demo аккаунт для pending_payment испытания и активировать его.
+    Используется когда автоматическое создание не сработало.
+    """
+    from datetime import datetime, timezone
+    from app.core.security import encrypt_aes256
+    from app.services.exchange.bybit_master import BybitMasterClient
+
+    ch = await session.get(UserChallenge, challenge_id)
+    if not ch:
+        raise HTTPException(status_code=404, detail="Испытание не найдено")
+
+    user_result = await session.execute(select(User).where(User.id == ch.user_id))
+    user = user_result.scalar_one_or_none()
+
+    master = BybitMasterClient(mode="demo")
+    try:
+        demo_account = await master.setup_demo_challenge_account(
+            account_size=ch.initial_balance,
+            username_prefix=f"CHM{user.telegram_id if user else ch.user_id}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Bybit API error: {str(e)}")
+    finally:
+        await master.close()
+
+    now = datetime.now(timezone.utc)
+    ch.demo_account_id = demo_account["account_id"]
+    ch.demo_api_key_enc = encrypt_aes256(demo_account["api_key"])
+    ch.demo_api_secret_enc = encrypt_aes256(demo_account["api_secret"])
+    ch.status = ChallengeStatus.phase1
+    ch.started_at = now
+    ch.daily_reset_at = now
+
+    if user and user.role == UserRole.guest:
+        user.role = UserRole.challenger
+
+    await session.commit()
+    return APIResponse(data={
+        "challenge_id": challenge_id,
+        "bybit_uid": demo_account["account_id"],
+        "status": "phase1",
+    })
+
+
 # ─── Удаление испытания (super_admin) ─────────────────────────────────────────
 
 @router.delete("/challenges/{challenge_id}", response_model=APIResponse[dict])
