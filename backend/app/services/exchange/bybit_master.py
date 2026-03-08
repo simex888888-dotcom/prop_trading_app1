@@ -2,9 +2,13 @@
 Bybit Master Account Client — управление суб-аккаунтами, переводы, создание API ключей.
 Используется только backend-сервисами, никогда трейдерами напрямую.
 
-Два режима:
-  mode="demo"  — работает с api-demo.bybit.com, использует bybit_demo_master_api_key
-  mode="real"  — работает с api.bybit.com, использует bybit_master_api_key
+Три режима:
+  mode="testnet" — работает с api-testnet.bybit.com (challenge фаза)
+                   Testnet ПОДДЕРЖИВАЕТ создание суб-аккаунтов, трейдеры
+                   видят настоящий Bybit интерфейс на testnet.bybit.com
+  mode="demo"    — работает с api-demo.bybit.com (НЕ поддерживает суб-аккаунты,
+                   оставлено для обратной совместимости)
+  mode="real"    — работает с api.bybit.com (funded аккаунты, реальные деньги)
 """
 import hashlib
 import hmac
@@ -24,13 +28,25 @@ class BybitMasterClient:
     """
     Master-аккаунт Bybit для управления суб-аккаунтами и переводами.
 
-    mode="demo"  → api-demo.bybit.com  (challenge phase, virtual USDT)
-    mode="real"  → api.bybit.com       (funded phase, real USDT)
+    mode="testnet" → api-testnet.bybit.com  (challenge phase — рекомендуется)
+    mode="demo"    → api-demo.bybit.com     (НЕ поддерживает суб-аккаунты)
+    mode="real"    → api.bybit.com          (funded phase, real USDT)
     """
 
-    def __init__(self, mode: Literal["demo", "real"] = "real"):
+    def __init__(self, mode: Literal["testnet", "demo", "real"] = "real"):
         self.mode = mode
-        if mode == "demo":
+
+        if mode == "testnet":
+            self.api_key = settings.bybit_testnet_master_api_key
+            self.api_secret = settings.bybit_testnet_master_api_secret
+            if not self.api_key or not self.api_secret:
+                raise ValueError(
+                    "Bybit Testnet API ключи не настроены. "
+                    "Задайте BYBIT_TESTNET_MASTER_API_KEY и BYBIT_TESTNET_MASTER_API_SECRET "
+                    "в переменных окружения."
+                )
+            base_url = settings.bybit_testnet_base_url
+        elif mode == "demo":
             self.api_key = settings.bybit_demo_master_api_key
             self.api_secret = settings.bybit_demo_master_api_secret
             if not self.api_key or not self.api_secret:
@@ -131,7 +147,12 @@ class BybitMasterClient:
         note: Optional[str] = None,
     ) -> dict[str, Any]:
         """
-        Создаёт суб-аккаунт (в текущем mode: demo или real).
+        Создаёт суб-аккаунт.
+
+        mode="testnet" — работает на api-testnet.bybit.com ✓
+        mode="real"    — работает на api.bybit.com ✓
+        mode="demo"    — НЕ работает (ошибка 10032 от Bybit) ✗
+
         Returns: {"uid": str, "username": str, ...}
         """
         body: dict[str, Any] = {
@@ -176,7 +197,7 @@ class BybitMasterClient:
         logger.info(f"[{self.mode}] API key created for sub_uid={sub_uid}: key={result.get('apiKey', '')[:8]}...")
         return result
 
-    # ─── Demo balance — вызывается от имени суб-аккаунта ──────────────────────
+    # ─── Demo balance (только api-demo.bybit.com) ─────────────────────────────
 
     async def top_up_demo_balance_as_sub(
         self,
@@ -186,11 +207,10 @@ class BybitMasterClient:
         coin: str = "USDT",
     ) -> dict[str, Any]:
         """
-        Пополняет demo баланс суб-аккаунта.
+        Пополняет demo баланс суб-аккаунта через api-demo.bybit.com.
 
-        ВАЖНО: Bybit's /v5/account/demo-apply-money — это self-service endpoint.
-        Он должен вызываться с учётными данными СУММЫ самого аккаунта (не master).
-        Поэтому здесь мы создаём временный клиент с ключами суб-аккаунта.
+        ВАЖНО: Работает ТОЛЬКО на api-demo.bybit.com.
+        На testnet/real используйте internal_transfer вместо этого метода.
         """
         timestamp = str(int(time.time() * 1000))
         recv_window = "5000"
@@ -234,8 +254,8 @@ class BybitMasterClient:
         to_uid: Optional[str] = None,
     ) -> dict[str, Any]:
         """
-        Внутренний перевод средств на суб-аккаунт funded трейдера.
-        Используется только в mode="real".
+        Внутренний перевод средств на суб-аккаунт.
+        Используется для testnet (challenge) и real (funded) режимов.
         """
         import uuid
         transfer_id = str(uuid.uuid4())
@@ -266,7 +286,63 @@ class BybitMasterClient:
         await self._post("/v5/user/delete-sub-api", {"apikey": api_key})
         logger.info(f"API key deleted: {api_key[:8]}...")
 
-    # ─── Полный процесс создания Demo аккаунта для испытания ─────────────────
+    # ─── Создание Testnet аккаунта для испытания (основной метод) ────────────
+
+    async def setup_testnet_challenge_account(
+        self,
+        account_size: Decimal,
+        username_prefix: str,
+    ) -> dict[str, Any]:
+        """
+        Создаёт Testnet суб-аккаунт для испытания на api-testnet.bybit.com.
+
+        Должен вызываться с mode="testnet".
+
+        Шаги:
+        1. Создаём testnet суб-аккаунт
+        2. Переводим testnet USDT с master на суб-аккаунт
+        3. Создаём API ключи для суб-аккаунта
+
+        Трейдер получает API ключи и может торговать через:
+        - Встроенный терминал приложения (подключается к api-testnet.bybit.com)
+        - testnet.bybit.com (через управление суб-аккаунтами мастера)
+        - Любой терминал совместимый с Bybit API
+
+        Returns: {"account_id": str, "username": str, "api_key": str, "api_secret": str}
+        """
+        import secrets
+        suffix = secrets.token_hex(4).upper()
+        username = f"{username_prefix}_{suffix}"
+
+        # 1. Создать testnet суб-аккаунт
+        sub = await self.create_sub_account(username=username)
+        sub_uid = str(sub["uid"])
+
+        # 2. Перевести testnet USDT с master на суб-аккаунт
+        await self.internal_transfer(
+            amount=str(int(account_size)),
+            coin="USDT",
+            to_uid=sub_uid,
+        )
+
+        # 3. Создать API ключи для суб-аккаунта
+        api_result = await self.create_sub_api_key(
+            sub_uid=sub_uid,
+            note=f"CHM KRYPTON Testnet Challenge {username}",
+        )
+
+        logger.info(
+            f"Testnet challenge account ready: uid={sub_uid}, "
+            f"username={username}, balance={account_size} USDT"
+        )
+        return {
+            "account_id": sub_uid,
+            "username": username,
+            "api_key": api_result["apiKey"],
+            "api_secret": api_result["secret"],
+        }
+
+    # ─── Создание Demo аккаунта (устаревший метод) ────────────────────────────
 
     async def setup_demo_challenge_account(
         self,
@@ -274,27 +350,21 @@ class BybitMasterClient:
         username_prefix: str,
     ) -> dict[str, Any]:
         """
-        Создаёт Demo суб-аккаунт для испытания на Bybit Demo Trading.
+        [УСТАРЕВШИЙ] Создаёт Demo суб-аккаунт через api-demo.bybit.com.
 
-        Должен вызываться с mode="demo" (клиент работает с api-demo.bybit.com
-        используя demo master credentials).
+        ВНИМАНИЕ: Bybit Demo Trading (api-demo.bybit.com) не поддерживает
+        создание суб-аккаунтов (ошибка retCode=10032).
+        Используйте setup_testnet_challenge_account вместо этого.
 
-        Шаги:
-        1. Создаём demo суб-аккаунт (через demo master)
-        2. Создаём API ключи для demo суб-аккаунта (через demo master)
-        3. Пополняем demo баланс используя КЛЮЧИ СУБ-АККАУНТА (self-service)
-
-        Returns: {"account_id": str, "api_key": str, "api_secret": str}
+        Этот метод оставлен для обратной совместимости.
         """
         import secrets
         suffix = secrets.token_hex(4).upper()
         username = f"{username_prefix}_{suffix}"
 
-        # 1. Создать demo суб-аккаунт
         sub = await self.create_sub_account(username=username)
         sub_uid = str(sub["uid"])
 
-        # 2. Создать API ключи для суб-аккаунта
         api_result = await self.create_sub_api_key(
             sub_uid=sub_uid,
             note=f"CHM KRYPTON Demo Challenge {username}",
@@ -302,8 +372,6 @@ class BybitMasterClient:
         sub_api_key = api_result["apiKey"]
         sub_api_secret = api_result["secret"]
 
-        # 3. Пополнить demo баланс от имени суб-аккаунта
-        #    (demo-apply-money — self-service endpoint, не работает с master credentials)
         await self.top_up_demo_balance_as_sub(
             sub_api_key=sub_api_key,
             sub_api_secret=sub_api_secret,
@@ -316,16 +384,18 @@ class BybitMasterClient:
         )
         return {
             "account_id": sub_uid,
+            "username": username,
             "api_key": sub_api_key,
             "api_secret": sub_api_secret,
         }
 
-    # ─── Полный процесс создания Funded аккаунта ──────────────────────────────
+    # ─── Создание Funded аккаунта ──────────────────────────────────────────────
 
     async def setup_funded_account(
         self,
         account_size: Decimal,
         username_prefix: str,
+        max_leverage: int = 50,
     ) -> dict[str, Any]:
         """
         Создаёт реальный funded суб-аккаунт с переводом USDT.
@@ -338,7 +408,7 @@ class BybitMasterClient:
         3. Переводим USDT с master
         4. Создаём API ключи (без прав на вывод)
 
-        Returns: {"account_id": str, "api_key": str, "api_secret": str}
+        Returns: {"account_id": str, "username": str, "api_key": str, "api_secret": str}
         """
         import secrets
         suffix = secrets.token_hex(4).upper()
@@ -374,6 +444,7 @@ class BybitMasterClient:
         )
         return {
             "account_id": sub_uid,
+            "username": username,
             "api_key": api_result["apiKey"],
             "api_secret": api_result["secret"],
         }

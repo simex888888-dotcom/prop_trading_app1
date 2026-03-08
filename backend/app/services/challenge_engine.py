@@ -47,20 +47,29 @@ class ChallengeEngine:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.notification_service = NotificationService(session)
-        self.master_client = BybitMasterClient()
+        self.master_client = BybitMasterClient(mode="real")
 
     # ─── Вспомогательный метод получения клиента ──────────────────────────────
 
     def _get_exchange_client(self, challenge: UserChallenge) -> BybitClient:
-        """Возвращает Bybit клиент для demo или real аккаунта."""
-        if challenge.account_mode == "demo":
-            api_key = decrypt_aes256(challenge.demo_api_key_enc)
-            api_secret = decrypt_aes256(challenge.demo_api_secret_enc)
-            return BybitClient(api_key=api_key, api_secret=api_secret, mode="demo")
-        else:
+        """
+        Возвращает Bybit клиент для testnet/demo/real аккаунта.
+
+        account_mode="demo"   → testnet ключи (api-testnet.bybit.com)
+        account_mode="funded" → real ключи    (api.bybit.com)
+        """
+        if challenge.account_mode == "funded":
             api_key = decrypt_aes256(challenge.real_api_key_enc)
             api_secret = decrypt_aes256(challenge.real_api_secret_enc)
             return BybitClient(api_key=api_key, api_secret=api_secret, mode="real")
+        else:
+            # challenge фаза — используем testnet (или demo для старых аккаунтов)
+            api_key = decrypt_aes256(challenge.demo_api_key_enc)
+            api_secret = decrypt_aes256(challenge.demo_api_secret_enc)
+            # Если demo_account_id начинается с цифр — это testnet UID
+            # Если "paper" или "MANUAL_*" — paper trading (не вызываем Bybit API)
+            mode = "testnet" if challenge.demo_account_id and challenge.demo_account_id.isdigit() else "demo"
+            return BybitClient(api_key=api_key, api_secret=api_secret, mode=mode)
 
     # ─── Основной цикл проверки ───────────────────────────────────────────────
 
@@ -94,6 +103,19 @@ class ChallengeEngine:
     async def _check_challenge(self, challenge: UserChallenge) -> None:
         """Проверяет одно испытание."""
         ct = challenge.challenge_type
+
+        # Пропускаем paper trading аккаунты (нет Bybit API ключей)
+        if challenge.demo_account_id in ("paper",) or (
+            challenge.demo_account_id and challenge.demo_account_id.startswith("MANUAL_")
+        ):
+            return
+
+        # Пропускаем если нет API ключей
+        if not challenge.demo_api_key_enc and challenge.account_mode != "funded":
+            return
+        if not challenge.real_api_key_enc and challenge.account_mode == "funded":
+            return
+
         client = self._get_exchange_client(challenge)
 
         try:
@@ -425,15 +447,20 @@ class ChallengeEngine:
         challenge.daily_pnl = Decimal("0")
         challenge.total_pnl = Decimal("0")
 
-        # Для demo: сбрасываем баланс до initial
-        # (на реальном Bybit это делается через master API)
-        try:
-            await self.master_client.top_up_demo_balance(
-                uid=challenge.demo_account_id,
-                amount=str(challenge.initial_balance),
-            )
-        except Exception as e:
-            logger.warning(f"Could not reset demo balance for phase2: {e}")
+        # Для testnet: сбрасываем баланс суб-аккаунта до initial через master перевод
+        if challenge.demo_account_id and challenge.demo_account_id.isdigit():
+            try:
+                testnet_master = BybitMasterClient(mode="testnet")
+                try:
+                    await testnet_master.internal_transfer(
+                        amount=str(challenge.initial_balance),
+                        coin="USDT",
+                        to_uid=challenge.demo_account_id,
+                    )
+                finally:
+                    await testnet_master.close()
+            except Exception as e:
+                logger.warning(f"Could not reset testnet balance for phase2 (challenge {challenge.id}): {e}")
 
         challenge.current_balance = challenge.initial_balance
         challenge.peak_equity = challenge.initial_balance

@@ -1,5 +1,5 @@
 """
-Bybit Unified API v5 Client — Demo и Real режимы.
+Bybit Unified API v5 Client — Testnet, Demo и Real режимы.
 Документация: https://bybit-exchange.github.io/docs/v5/intro
 """
 import hashlib
@@ -24,24 +24,30 @@ class BybitAPIError(Exception):
 
 class BybitClient:
     """
-    Клиент Bybit API v5 для demo и real аккаунтов трейдеров.
+    Клиент Bybit API v5 для аккаунтов трейдеров.
     Только perpetual futures (категория = linear).
+
+    mode="testnet" → api-testnet.bybit.com (challenge фаза)
+    mode="demo"    → api-demo.bybit.com    (устаревший)
+    mode="real"    → api.bybit.com         (funded фаза)
     """
 
     def __init__(
         self,
         api_key: str,
         api_secret: str,
-        mode: Literal["demo", "real"] = "demo",
+        mode: Literal["testnet", "demo", "real"] = "testnet",
         timeout: float = 10.0,
     ):
         self.api_key = api_key
         self.api_secret = api_secret
         self.mode = mode
-        self.base_url = (
-            settings.bybit_demo_base_url if mode == "demo"
-            else settings.bybit_real_base_url
-        )
+        if mode == "testnet":
+            self.base_url = settings.bybit_testnet_base_url
+        elif mode == "demo":
+            self.base_url = settings.bybit_demo_base_url
+        else:
+            self.base_url = settings.bybit_real_base_url
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=timeout,
@@ -367,6 +373,31 @@ class BybitClient:
             "sellLeverage": str(leverage),
         }
         data = await self._post("/v5/position/set-leverage", body)
+        return data.get("result", {})
+
+    # ─── Перевод средств обратно мастеру (для сброса баланса при Phase 2) ───────
+
+    async def transfer_to_master(
+        self,
+        amount: str,
+        coin: str = "USDT",
+    ) -> dict[str, Any]:
+        """
+        Перевод средств с суб-аккаунта обратно мастеру.
+        Используется для сброса баланса при переходе Phase 1 → Phase 2.
+        """
+        import json as json_lib
+        import uuid
+        transfer_id = str(uuid.uuid4())
+        body = {
+            "transferId": transfer_id,
+            "coin": coin,
+            "amount": amount,
+            "fromAccountType": "UNIFIED",
+            "toAccountType": "UNIFIED",
+        }
+        data = await self._post("/v5/asset/transfer/inter-transfer", body)
+        logger.info(f"Transfer {amount} {coin} to master: transferId={transfer_id}")
         return data.get("result", {})
 
     # ─── Cleanup ──────────────────────────────────────────────────────────────

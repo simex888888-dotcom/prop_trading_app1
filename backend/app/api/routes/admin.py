@@ -722,8 +722,9 @@ async def activate_challenge_bybit(
     session: AsyncSession = Depends(get_db),
 ) -> APIResponse[dict]:
     """
-    Создать Bybit demo аккаунт для pending_payment испытания и активировать его.
+    Создать Bybit Testnet суб-аккаунт для pending_payment испытания и активировать его.
     Используется когда автоматическое создание не сработало.
+    Testnet (api-testnet.bybit.com) поддерживает создание суб-аккаунтов.
     """
     from datetime import datetime, timezone
     from app.core.security import encrypt_aes256
@@ -736,21 +737,22 @@ async def activate_challenge_bybit(
     user_result = await session.execute(select(User).where(User.id == ch.user_id))
     user = user_result.scalar_one_or_none()
 
-    master = BybitMasterClient(mode="demo")
+    master = BybitMasterClient(mode="testnet")
     try:
-        demo_account = await master.setup_demo_challenge_account(
+        testnet_account = await master.setup_testnet_challenge_account(
             account_size=ch.initial_balance,
             username_prefix=f"CHM{user.telegram_id if user else ch.user_id}",
         )
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Bybit API error: {str(e)}")
+        raise HTTPException(status_code=503, detail=f"Bybit Testnet API error: {str(e)}")
     finally:
         await master.close()
 
     now = datetime.now(timezone.utc)
-    ch.demo_account_id = demo_account["account_id"]
-    ch.demo_api_key_enc = encrypt_aes256(demo_account["api_key"])
-    ch.demo_api_secret_enc = encrypt_aes256(demo_account["api_secret"])
+    ch.demo_account_id = testnet_account["account_id"]
+    ch.demo_account_username = testnet_account.get("username", "")
+    ch.demo_api_key_enc = encrypt_aes256(testnet_account["api_key"])
+    ch.demo_api_secret_enc = encrypt_aes256(testnet_account["api_secret"])
     ch.status = ChallengeStatus.phase1
     ch.started_at = now
     ch.daily_reset_at = now
@@ -761,7 +763,9 @@ async def activate_challenge_bybit(
     await session.commit()
     return APIResponse(data={
         "challenge_id": challenge_id,
-        "bybit_uid": demo_account["account_id"],
+        "bybit_uid": testnet_account["account_id"],
+        "bybit_username": testnet_account.get("username", ""),
+        "exchange": "bybit_testnet",
         "status": "phase1",
     })
 

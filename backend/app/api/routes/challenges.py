@@ -160,23 +160,28 @@ async def purchase_challenge(
             detail="You already have an active challenge of this type",
         )
 
-    # Создаём demo суб-аккаунт на Bybit Demo Trading (api-demo.bybit.com)
+    # Создаём суб-аккаунт на Bybit Testnet (api-testnet.bybit.com)
+    # Testnet поддерживает создание суб-аккаунтов (в отличие от api-demo.bybit.com)
     from app.services.exchange.bybit_master import BybitMasterClient
     now = datetime.now(timezone.utc)
     demo_account: dict | None = None
 
-    master = BybitMasterClient(mode="demo")
     try:
-        demo_account = await master.setup_demo_challenge_account(
-            account_size=ct.account_size,
-            username_prefix=f"CHM{user.telegram_id}",
-        )
-    except Exception as e:
-        logger.error(f"Failed to create Bybit demo account for user {user.id}: {e}")
-        # Fallback: create challenge with pending_payment so admin can activate manually
+        master = BybitMasterClient(mode="testnet")
+        try:
+            demo_account = await master.setup_testnet_challenge_account(
+                account_size=ct.account_size,
+                username_prefix=f"CHM{user.telegram_id}",
+            )
+        except Exception as e:
+            logger.error(f"Failed to create Bybit testnet account for user {user.id}: {e}")
+            demo_account = None
+        finally:
+            await master.close()
+    except ValueError:
+        # Testnet ключи не настроены — fallback на paper trading
+        logger.warning("Bybit Testnet credentials not configured, falling back to paper trading")
         demo_account = None
-    finally:
-        await master.close()
 
     if demo_account:
         challenge = UserChallenge(
@@ -187,6 +192,7 @@ async def purchase_challenge(
             account_mode="demo",
             exchange="bybit",
             demo_account_id=demo_account["account_id"],
+            demo_account_username=demo_account.get("username", ""),
             demo_api_key_enc=encrypt_aes256(demo_account["api_key"]),
             demo_api_secret_enc=encrypt_aes256(demo_account["api_secret"]),
             initial_balance=ct.account_size,
@@ -338,10 +344,11 @@ class CredentialsOut(BaseModel):
     api_key: str
     api_secret: str
     sub_uid: str
+    username: str
     exchange: str
-    base_url: str
-    demo_url: str
-    mode: str = "paper"  # "paper" | "bybit"
+    api_url: str
+    ui_url: str
+    mode: str = "paper"  # "paper" | "testnet" | "real"
 
 
 @router.get("/{challenge_id}/credentials", response_model=APIResponse[CredentialsOut])
@@ -351,10 +358,13 @@ async def get_challenge_credentials(
     session: AsyncSession = Depends(get_db),
 ) -> APIResponse[CredentialsOut]:
     """
-    Возвращает информацию о торговом аккаунте для испытания.
-    Если challenge активирован через paper trading — возвращает mode="paper".
-    Если есть Bybit суб-аккаунт — возвращает ключи и mode="bybit".
+    Возвращает учётные данные торгового аккаунта для испытания.
+
+    mode="testnet" — Bybit Testnet суб-аккаунт (api-testnet.bybit.com)
+    mode="real"    — Bybit Real суб-аккаунт (api.bybit.com)
+    mode="paper"   — Paper Trading (нет Bybit аккаунта)
     """
+    from app.core.config import settings as cfg
     challenge = await _get_user_challenge(challenge_id, user.id, session)
 
     if challenge.status not in (
@@ -362,29 +372,50 @@ async def get_challenge_credentials(
     ):
         raise HTTPException(
             status_code=404,
-            detail="Учётные данные ещё не созданы. Нажмите 'Активировать аккаунт'.",
+            detail="Учётные данные ещё не созданы.",
         )
 
-    # Paper trading mode (нет Bybit суб-аккаунта)
-    if not challenge.demo_api_key_enc or challenge.demo_account_id == "paper":
+    # Funded аккаунт — реальный Bybit
+    if challenge.account_mode == "funded" and challenge.real_api_key_enc:
+        return APIResponse(data=CredentialsOut(
+            api_key=decrypt_aes256(challenge.real_api_key_enc),
+            api_secret=decrypt_aes256(challenge.real_api_secret_enc),
+            sub_uid=challenge.real_account_id or "",
+            username=challenge.demo_account_username or "",
+            exchange="Bybit",
+            api_url=cfg.bybit_real_base_url,
+            ui_url="https://www.bybit.com",
+            mode="real",
+        ))
+
+    # Paper trading (нет Bybit ключей)
+    if (
+        not challenge.demo_api_key_enc
+        or not challenge.demo_account_id
+        or challenge.demo_account_id in ("paper",)
+        or challenge.demo_account_id.startswith("MANUAL_")
+    ):
         return APIResponse(data=CredentialsOut(
             api_key="",
             api_secret="",
             sub_uid="",
+            username="",
             exchange="Paper Trading",
-            base_url="",
-            demo_url="",
+            api_url="",
+            ui_url="",
             mode="paper",
         ))
 
+    # Bybit Testnet суб-аккаунт (challenge фаза)
     return APIResponse(data=CredentialsOut(
         api_key=decrypt_aes256(challenge.demo_api_key_enc),
         api_secret=decrypt_aes256(challenge.demo_api_secret_enc),
         sub_uid=challenge.demo_account_id or "",
-        exchange="Bybit Demo",
-        base_url="https://api-demo.bybit.com",
-        demo_url="https://testnet.bybit.com",
-        mode="bybit",
+        username=challenge.demo_account_username or "",
+        exchange="Bybit Testnet",
+        api_url=cfg.bybit_testnet_base_url,
+        ui_url=cfg.bybit_testnet_ui_url,
+        mode="testnet",
     ))
 
 
