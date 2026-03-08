@@ -5,6 +5,7 @@ import { useState, useCallback } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { statsApi, tradingApi, type TradeHistory } from '@/api/client'
+import { ClipboardIcon, TrendUpIcon, TrendDownIcon } from '@/components/ui/Icon'
 import { useAppStore } from '@/store/appStore'
 import { EquitySparkline } from '@/components/charts/EquitySparkline'
 import { PnLNumber } from '@/components/ui/PnLNumber'
@@ -45,20 +46,21 @@ export function HistoryPage() {
     enabled: !!activeChallengeId,
   })
 
-  const trades = (data?.pages.flatMap((p) => p.trades) ?? []).filter((t) => {
-    if (filterResult === 'Win') return t.pnl > 0
-    if (filterResult === 'Loss') return t.pnl <= 0
+  const trades = (data?.pages.flatMap((p) => p.trades ?? []) ?? []).filter((t) => {
+    if (!t) return false
+    if (filterResult === 'Win') return (t.pnl ?? 0) > 0
+    if (filterResult === 'Loss') return (t.pnl ?? 0) <= 0
     return true
   })
 
-  const totalPnl = trades.reduce((s, t) => s + t.pnl, 0)
-  const winCount = trades.filter((t) => t.pnl > 0).length
+  const totalPnl = trades.reduce((s, t) => s + (t.pnl ?? 0), 0)
+  const winCount = trades.filter((t) => (t.pnl ?? 0) > 0).length
   const winRate = trades.length > 0 ? (winCount / trades.length) * 100 : 0
 
   if (!activeChallengeId) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-8 text-center">
-        <span className="text-5xl">📋</span>
+        <ClipboardIcon size={56} color="#6C63FF" />
         <h2 className="text-xl font-bold text-white">Нет активного испытания</h2>
         <p className="text-text-secondary">История пуста</p>
       </div>
@@ -116,7 +118,7 @@ export function HistoryPage() {
               }}
               onClick={() => setFilterSide(f)}
             >
-              {f === 'All' ? 'Все' : f === 'Buy' ? '🟢 Лонг' : '🔴 Шорт'}
+              {f === 'All' ? 'Все' : f === 'Buy' ? <span className="flex items-center justify-center gap-1"><TrendUpIcon size={12} color="#00D4AA" /> Лонг</span> : <span className="flex items-center justify-center gap-1"><TrendDownIcon size={12} color="#FF4757" /> Шорт</span>}
             </button>
           ))}
         </div>
@@ -181,8 +183,9 @@ export function HistoryPage() {
 
 function TradeRow({ trade, onShare }: { trade: TradeHistory; onShare: () => void }) {
   const isLong = trade.side === 'Buy'
-  const isProfit = trade.pnl > 0
-  const date = new Date(trade.closed_at ?? trade.created_at)
+  const isProfit = (trade.pnl ?? 0) > 0
+  const dateStr = trade.closed_at ?? trade.created_at
+  const date = dateStr ? new Date(dateStr) : new Date()
 
   return (
     <motion.div
@@ -224,7 +227,7 @@ function TradeRow({ trade, onShare }: { trade: TradeHistory; onShare: () => void
             {date.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
           </span>
           <button
-            onClick={onShare}
+            onClick={(e) => { e.stopPropagation(); onShare() }}
             className="text-xs px-2 py-0.5 rounded"
             style={{ background: 'rgba(108,99,255,0.15)', color: '#6C63FF' }}
           >
@@ -238,7 +241,7 @@ function TradeRow({ trade, onShare }: { trade: TradeHistory; onShare: () => void
 
 function SharePnLOverlay({ trade, onClose }: { trade: TradeHistory; onClose: () => void }) {
   const isLong = trade.side === 'Buy'
-  const isProfit = trade.pnl > 0
+  const isProfit = (trade.pnl ?? 0) > 0
 
   return (
     <motion.div
@@ -246,7 +249,7 @@ function SharePnLOverlay({ trade, onClose }: { trade: TradeHistory; onClose: () 
       style={{ background: 'rgba(0,0,0,0.85)' }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      onClick={onClose}
+      onPointerUp={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <motion.div
         className="w-full max-w-sm rounded-3xl p-6 relative overflow-hidden"

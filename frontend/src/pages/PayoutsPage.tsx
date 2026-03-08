@@ -9,11 +9,12 @@ import { payoutsApi, type Payout } from '@/api/client'
 import { useAppStore } from '@/store/appStore'
 import { BottomSheet } from '@/components/ui/BottomSheet'
 import { CardSkeleton } from '@/components/ui/LoadingSkeleton'
+import { DollarIcon, SpinnerIcon, CheckCircleIcon } from '@/components/ui/Icon'
 
 const NETWORKS = [
-  { id: 'TRC20', label: 'TRC20 (TRON)', fee: '~1 USDT', icon: '🔴' },
-  { id: 'ERC20', label: 'ERC20 (Ethereum)', fee: '~5 USDT', icon: '🔵' },
-  { id: 'BEP20', label: 'BEP20 (BSC)', fee: '~0.5 USDT', icon: '🟡' },
+  { id: 'TRC20', label: 'TRC20 (TRON)', fee: '~1 USDT', dot: '#FF4757' },
+  { id: 'ERC20', label: 'ERC20 (Ethereum)', fee: '~5 USDT', dot: '#6C63FF' },
+  { id: 'BEP20', label: 'BEP20 (BSC)', fee: '~0.5 USDT', dot: '#FFA502' },
 ]
 
 export function PayoutsPage() {
@@ -68,7 +69,7 @@ export function PayoutsPage() {
   if (!activeChallengeId) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-8 text-center">
-        <span className="text-5xl">💰</span>
+        <DollarIcon size={56} color="#00D4AA" />
         <h2 className="text-xl font-bold text-white">Нет активного испытания</h2>
         <p className="text-text-secondary">Только Funded трейдеры могут запрашивать выплаты</p>
       </div>
@@ -81,8 +82,8 @@ export function PayoutsPage() {
       <div className="px-4 pt-4 pb-3 flex items-center gap-3">
         <button
           onClick={() => navigate(-1)}
-          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-          style={{ background: 'rgba(255,255,255,0.06)' }}
+          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white text-xl font-bold"
+          style={{ background: 'rgba(255,255,255,0.08)' }}
         >
           ‹
         </button>
@@ -98,7 +99,7 @@ export function PayoutsPage() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0 }}
         >
-          ✓ {successMsg}
+          <span className="flex items-center justify-center gap-1"><CheckCircleIcon size={14} color="#00D4AA" /> {successMsg}</span>
         </motion.div>
       )}
 
@@ -134,7 +135,7 @@ export function PayoutsPage() {
                 onClick={() => setRequestSheet(true)}
                 whileTap={{ scale: 0.97 }}
               >
-                💰 Запросить выплату
+                <span className="flex items-center justify-center gap-2"><DollarIcon size={18} color="#fff" /> Запросить выплату</span>
               </motion.button>
             ) : (
               <p className="mt-3 text-center text-xs text-text-muted">
@@ -239,7 +240,7 @@ export function PayoutsPage() {
                 onClick={() => setNetwork(n.id)}
               >
                 <div className="flex items-center gap-2">
-                  <span>{n.icon}</span>
+                  <span className="w-3 h-3 rounded-full shrink-0" style={{ background: n.dot }} />
                   <span className="text-sm text-white">{n.label}</span>
                 </div>
                 <span className="text-xs text-text-muted">{n.fee}</span>
@@ -299,7 +300,9 @@ export function PayoutsPage() {
             disabled={!canRequest || requestMutation.isPending}
             whileTap={canRequest ? { scale: 0.97 } : undefined}
           >
-            {requestMutation.isPending ? '⏳ Отправка...' : '💰 Подтвердить запрос'}
+            {requestMutation.isPending
+              ? <span className="flex items-center justify-center gap-2"><SpinnerIcon size={18} /> Отправка...</span>
+              : <span className="flex items-center justify-center gap-2"><DollarIcon size={18} color="#fff" /> Подтвердить запрос</span>}
           </motion.button>
         </div>
       </BottomSheet>

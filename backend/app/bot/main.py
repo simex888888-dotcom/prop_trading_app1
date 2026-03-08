@@ -10,7 +10,7 @@ from aiogram.enums import ParseMode
 from loguru import logger
 
 from app.core.config import settings
-from app.bot.handlers import commands, callbacks
+from app.bot.handlers import commands, callbacks, admin_bot
 from app.bot.middlewares.auth import AuthMiddleware
 
 
@@ -29,6 +29,7 @@ async def main() -> None:
     dp.update.middleware(AuthMiddleware())
 
     # Роутеры
+    dp.include_router(admin_bot.router)   # Admin panel — первым, чтобы перехватывать /adm*
     dp.include_router(commands.router)
     dp.include_router(callbacks.router)
 
@@ -46,7 +47,7 @@ async def main() -> None:
     try:
         await dp.start_polling(
             bot,
-            allowed_updates=["message", "callback_query"],
+            allowed_updates=["message", "callback_query", "inline_query"],
             drop_pending_updates=True,
         )
     finally:

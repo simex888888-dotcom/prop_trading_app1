@@ -394,6 +394,78 @@ async def get_overview(
     ))
 
 
+# ─── Ручная активация испытания ───────────────────────────────────────────────
+
+class ManualActivateRequest(BaseModel):
+    user_telegram_id: int
+    account_size: float
+
+
+@router.post("/challenges/activate-manual", response_model=APIResponse[dict])
+async def activate_challenge_manual(
+    body: ManualActivateRequest,
+    admin: User = Depends(require_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[dict]:
+    """
+    Ручная активация испытания для пользователя после подтверждения оплаты.
+    Создаёт испытание без обращения к Bybit API.
+    """
+    from datetime import datetime, timezone
+
+    user_result = await session.execute(
+        select(User).where(User.telegram_id == body.user_telegram_id)
+    )
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User with telegram_id {body.user_telegram_id} not found")
+
+    ct_result = await session.execute(
+        select(ChallengeType).where(
+            ChallengeType.account_size == body.account_size,
+            ChallengeType.is_active == True,
+        ).limit(1)
+    )
+    ct = ct_result.scalar_one_or_none()
+    if not ct:
+        raise HTTPException(status_code=404, detail=f"No active challenge type found for size ${body.account_size}")
+
+    now = datetime.now(timezone.utc)
+    challenge = UserChallenge(
+        user_id=user.id,
+        challenge_type_id=ct.id,
+        status=ChallengeStatus.phase1,
+        phase=1,
+        account_mode="demo",
+        exchange="bybit",
+        demo_account_id=f"MANUAL_{user.telegram_id}_{int(now.timestamp())}",
+        demo_api_key_enc="",
+        demo_api_secret_enc="",
+        initial_balance=Decimal(str(body.account_size)),
+        current_balance=Decimal(str(body.account_size)),
+        peak_equity=Decimal(str(body.account_size)),
+        daily_start_balance=Decimal(str(body.account_size)),
+        daily_pnl=Decimal("0"),
+        total_pnl=Decimal("0"),
+        trading_days_count=0,
+        started_at=now,
+        daily_reset_at=now,
+    )
+    session.add(challenge)
+
+    if user.role == UserRole.guest:
+        user.role = UserRole.challenger
+
+    await session.commit()
+    return APIResponse(data={
+        "challenge_id": challenge.id,
+        "user_id": user.id,
+        "account_size": body.account_size,
+        "status": "phase1",
+        "note": "Created manually without Bybit API",
+    })
+
+
 # ─── Дополнительные эндпоинты для фронтенд-панели ─────────────────────────────
 
 class OverviewExtOut(BaseModel):

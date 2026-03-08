@@ -4,27 +4,28 @@
  */
 import { motion, AnimatePresence } from 'framer-motion'
 import { useEffect, useRef } from 'react'
+import { DiamondIcon, XCircleIcon, TrendUpIcon, DollarIcon } from '@/components/ui/Icon'
 
 export type StatusType = 'funded_success' | 'challenge_failed' | 'scaling_up' | 'payout_sent'
 
 const STATUS_CONFIG: Record<StatusType, { title: string; subtitle: string; color: string }> = {
   funded_success: {
-    title: '💎 Финансирование получено!',
+    title: 'Финансирование получено!',
     subtitle: 'Ты стал Funded Trader',
     color: '#00D4AA',
   },
   challenge_failed: {
-    title: '❌ Испытание провалено',
+    title: 'Испытание провалено',
     subtitle: 'Не останавливайся — попробуй снова',
     color: '#FF4757',
   },
   scaling_up: {
-    title: '📈 Счёт увеличен!',
+    title: 'Счёт увеличен!',
     subtitle: 'Отличные результаты',
     color: '#6C63FF',
   },
   payout_sent: {
-    title: '💰 Выплата отправлена!',
+    title: 'Выплата отправлена!',
     subtitle: 'Средства на пути к тебе',
     color: '#FFA502',
   },
@@ -81,13 +82,14 @@ export function StatusOverlay({ type, onComplete }: StatusOverlayProps) {
             transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
           >
             <motion.div
-              className="text-6xl mb-6"
+              className="flex justify-center mb-6"
               animate={{ scale: [1, 1.2, 1] }}
               transition={{ duration: 0.5, delay: 0.3 }}
             >
-              {type === 'funded_success' ? '💎' :
-               type === 'challenge_failed' ? '❌' :
-               type === 'scaling_up' ? '📈' : '💰'}
+              {type === 'funded_success' ? <DiamondIcon size={72} color="#00D4AA" /> :
+               type === 'challenge_failed' ? <XCircleIcon size={72} color="#FF4757" /> :
+               type === 'scaling_up' ? <TrendUpIcon size={72} color="#6C63FF" /> :
+               <DollarIcon size={72} color="#FFA502" />}
             </motion.div>
             <h2
               className="text-3xl font-bold mb-2"

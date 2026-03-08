@@ -3,6 +3,7 @@
  */
 import { motion } from 'framer-motion'
 import { AnimatedIcon } from './AnimatedIcon'
+import { MedalIcon, LockIcon } from '@/components/ui/Icon'
 
 type BadgeLevel = 'locked' | 'bronze' | 'silver' | 'gold' | 'platinum'
 
@@ -79,15 +80,13 @@ export function AchievementBadge({
               staticSrc={lottieSrc.replace('.lottie', '.png')}
             />
           ) : (
-            <span style={{ fontSize: size * 0.35, filter: isLocked ? 'grayscale(1) opacity(0.3)' : 'none' }}>
-              🏅
-            </span>
+            <MedalIcon size={Math.round(size * 0.42)} color={isLocked ? '#2A2A3A' : color} />
           )}
 
           {/* Lock icon */}
           {isLocked && (
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-text-muted" style={{ fontSize: size * 0.3 }}>🔒</span>
+              <LockIcon size={Math.round(size * 0.35)} color="#4A4A5A" />
             </div>
           )}
         </motion.div>

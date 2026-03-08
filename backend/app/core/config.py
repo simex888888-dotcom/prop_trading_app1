@@ -49,13 +49,24 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_bot_username: str = ""
     telegram_webapp_url: str = "https://your-frontend-url"
-    super_admin_tg_id: int = 0
+    super_admin_tg_id: int = 445677777
+    # Comma-separated list of admin Telegram IDs (super_admin_tg_id is always included)
+    admin_tg_ids_str: str = "445677777,705020259"
+
+    # Payment wallet for challenge fees
+    payment_wallet_bep20: str = "0x075c92cd6e2895c280d540cec4e84617c0378463"
+    payment_wallet_network: str = "BEP20 (BSC)"
 
     # Bybit — Real master (для funded аккаунтов)
     bybit_master_api_key: str = ""
     bybit_master_api_secret: str = ""
     bybit_master_min_balance: float = 10_000.0
     bybit_real_base_url: str = "https://api.bybit.com"
+    # Demo environment master API keys (created at demo.bybit.com → API Management)
+    # These are SEPARATE from the real account keys above.
+    # If not set, demo balance top-up is skipped (account still created).
+    bybit_demo_master_api_key: str = ""
+    bybit_demo_master_api_secret: str = ""
 
     # Bybit — Demo master (для challenge/испытания фазы)
     # Это отдельный аккаунт на api-demo.bybit.com.
@@ -87,6 +98,18 @@ class Settings(BaseSettings):
 
     # ChallengeEngine
     engine_check_interval_seconds: int = 30
+
+    @property
+    def admin_tg_ids(self) -> list[int]:
+        """All admin Telegram IDs (from admin_tg_ids_str + super_admin_tg_id)."""
+        ids = set()
+        if self.super_admin_tg_id:
+            ids.add(self.super_admin_tg_id)
+        for raw in self.admin_tg_ids_str.split(","):
+            raw = raw.strip()
+            if raw.isdigit():
+                ids.add(int(raw))
+        return list(ids)
 
     @property
     def database_url_async(self) -> str:

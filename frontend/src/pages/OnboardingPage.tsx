@@ -1,27 +1,31 @@
 /**
  * OnboardingPage — 3-слайдовый онбординг для новых пользователей.
  */
-import { useState } from 'react'
+import { ReactNode, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
+import { FlaskIcon, DNAIcon, DiamondIcon } from '@/components/ui/Icon'
+
+const SLIDE_ICONS: ReactNode[] = [
+  <FlaskIcon size={96} color="#A855F7" />,
+  <DNAIcon size={96} color="#3B82F6" />,
+  <DiamondIcon size={96} color="#00D4AA" />,
+]
 
 const SLIDES = [
   {
-    emoji: '⚗️',
     title: 'Что такое проп-трейдинг?',
     description:
       'Торгуй чужим капиталом — зарабатывай своё. CHM_KRYPTON выдаёт финансирование от $5K до $200K лучшим трейдерам.',
     gradient: 'from-purple-900/40 to-bg-primary',
   },
   {
-    emoji: '🧬',
     title: 'Путь Элемента',
     description:
       'Пройди путь от Isotope до Krypton. Каждый этап — это испытание, рост и новые возможности.',
     gradient: 'from-blue-900/40 to-bg-primary',
   },
   {
-    emoji: '💎',
     title: 'До 90% от прибыли',
     description:
       'Получай до 90% прибыли с реального funded счёта. Масштабирование до $2,000,000.',
@@ -84,11 +88,11 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps = {}) {
           className="relative flex flex-col items-center text-center gap-6 flex-1 justify-center"
         >
           <motion.div
-            className="text-8xl"
+            className="flex items-center justify-center"
             animate={{ scale: [1, 1.08, 1] }}
             transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
           >
-            {slide.emoji}
+            {SLIDE_ICONS[current]}
           </motion.div>
           <div className="space-y-3 max-w-xs">
             <h2 className="text-2xl font-bold text-white">{slide.title}</h2>

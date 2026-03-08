@@ -103,6 +103,8 @@ export const challengesApi = {
   getViolations: (id: number) => get<Violation[]>(`/challenges/${id}/violations`),
   purchase: (challengeTypeId: number) =>
     post<UserChallenge>('/challenges/purchase', { challenge_type_id: challengeTypeId }),
+  getAccountDetails: (challengeId: number) =>
+    get<AccountDetails>(`/challenges/${challengeId}/account-details`),
 }
 
 // ── Trading ──────────────────────────────────────────────────────────────────
@@ -170,6 +172,16 @@ export const leaderboardApi = {
   getAlltime: (limit = 100) => get<LeaderboardEntry[]>('/leaderboard/alltime', { limit }),
 }
 
+// ── Paper Trading ─────────────────────────────────────────────────────────────
+export const paperApi = {
+  getBalance: () => get<PaperBalance>('/paper/balance'),
+  getPositions: (closed = false) => get<PaperPosition[]>('/paper/positions', { closed }),
+  placeOrder: (order: { symbol: string; side: 'Buy' | 'Sell'; qty: string; leverage?: number; stop_loss?: string; take_profit?: string }) =>
+    post<PaperPosition>('/paper/order', order),
+  closePosition: (positionId: number) => post<PaperPosition>(`/paper/close/${positionId}`),
+  reset: () => del<{ reset: boolean; new_balance: number }>('/paper/reset'),
+}
+
 // ── Referral ──────────────────────────────────────────────────────────────────
 export const referralApi = {
   info: () => get<ReferralInfo>('/referral/info'),
@@ -199,11 +211,18 @@ export interface ChallengeType {
   profit_split_pct: number
 }
 
+export interface AccountDetails {
+  bybit_uid: string
+  username: string
+  api_key: string
+  account_mode: string
+}
+
 export interface UserChallenge {
   id: number
   challenge_type_id: number
   challenge_type?: ChallengeType
-  status: 'phase1' | 'phase2' | 'funded' | 'failed' | 'completed'
+  status: 'pending_payment' | 'phase1' | 'phase2' | 'funded' | 'failed' | 'completed'
   phase: number | null
   account_mode: 'demo' | 'funded'
   initial_balance: number
@@ -470,4 +489,32 @@ export interface PaginatedResponse<T> {
   next_cursor?: string
   has_more: boolean
   total?: number
+}
+
+// ── Paper Trading Types ───────────────────────────────────────────────────────
+export interface PaperPosition {
+  id: number
+  symbol: string
+  side: 'Buy' | 'Sell'
+  qty: number
+  entry_price: number
+  leverage: number
+  take_profit?: number
+  stop_loss?: number
+  exit_price?: number
+  pnl?: number
+  pnl_pct?: number
+  is_closed: boolean
+  margin_used: number
+  opened_at: string
+  closed_at?: string
+  unrealized_pnl?: number
+}
+
+export interface PaperBalance {
+  balance: number
+  equity: number
+  unrealized_pnl: number
+  margin_used: number
+  available: number
 }

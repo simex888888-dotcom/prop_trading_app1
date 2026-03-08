@@ -145,12 +145,37 @@ async def _get_active_challenge(
 def _build_client(challenge: UserChallenge) -> BybitClient:
     """Создаёт Bybit клиент для испытания."""
     if challenge.account_mode == "demo":
-        key = decrypt_aes256(challenge.demo_api_key_enc)
-        secret = decrypt_aes256(challenge.demo_api_secret_enc)
+        if not challenge.demo_api_key_enc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Аккаунт создан вручную — Bybit API-ключи не настроены. "
+                    "Обратитесь к администратору для привязки реального суб-аккаунта."
+                ),
+            )
+        try:
+            key = decrypt_aes256(challenge.demo_api_key_enc)
+            secret = decrypt_aes256(challenge.demo_api_secret_enc)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Ошибка расшифровки API-ключей. Обратитесь к администратору.",
+            )
         return BybitClient(api_key=key, api_secret=secret, mode="demo")
     else:
-        key = decrypt_aes256(challenge.real_api_key_enc)
-        secret = decrypt_aes256(challenge.real_api_secret_enc)
+        if not getattr(challenge, "real_api_key_enc", None):
+            raise HTTPException(
+                status_code=400,
+                detail="API-ключи funded-счёта не настроены.",
+            )
+        try:
+            key = decrypt_aes256(challenge.real_api_key_enc)
+            secret = decrypt_aes256(challenge.real_api_secret_enc)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Ошибка расшифровки API-ключей funded-счёта.",
+            )
         return BybitClient(api_key=key, api_secret=secret, mode="real")
 
 
