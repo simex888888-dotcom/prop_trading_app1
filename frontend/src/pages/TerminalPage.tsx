@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 import { tradingApi, type Position, type Order } from '@/api/client'
 import { TradingChart } from '@/components/charts/TradingChart'
 import { PnLNumber } from '@/components/ui/PnLNumber'
@@ -25,6 +26,7 @@ export function TerminalPage() {
   const selectedPair = useAppStore((s) => s.selectedPair)
   const accessToken = useAuthStore((s) => s.accessToken)
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   const [timeframe, setTimeframe] = useState('60')
   const [orderType, setOrderType] = useState<'Market' | 'Limit'>('Market')
@@ -111,6 +113,14 @@ export function TerminalPage() {
         <span className="text-5xl">⚡</span>
         <h2 className="text-xl font-bold text-white">Нет активного испытания</h2>
         <p className="text-text-secondary">Купи испытание, чтобы начать торговать</p>
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          className="px-6 py-3 rounded-2xl font-bold text-white text-sm"
+          style={{ background: 'linear-gradient(135deg, #6C63FF, #5A52E0)' }}
+          onClick={() => navigate('/challenges')}
+        >
+          Выбрать план
+        </motion.button>
       </div>
     )
   }

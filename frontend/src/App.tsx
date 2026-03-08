@@ -6,7 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 
-import { authApi } from '@/api/client'
+import { authApi, challengesApi } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import { useAppStore } from '@/store/appStore'
 import { AnimatedTabBar } from '@/components/animated/AnimatedTabBar'
@@ -120,6 +120,16 @@ function AuthGate() {
         if (result.is_new) {
           setStatus('onboarding')
         } else {
+          // Auto-select active challenge so Terminal tab is accessible immediately
+          try {
+            const challenges = await challengesApi.my()
+            const active = challenges.find((c) =>
+              ['phase1', 'phase2', 'funded'].includes(c.status)
+            )
+            if (active) setActiveChallenge(active)
+          } catch {
+            // Non-critical — user can still navigate manually
+          }
           setStatus('ready')
         }
       } catch (e: any) {

@@ -1,10 +1,11 @@
 /**
  * DashboardPage — главный дашборд CHM_KRYPTON.
  */
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { statsApi, tradingApi } from '@/api/client'
+import { statsApi, tradingApi, challengesApi } from '@/api/client'
 import { PnLNumber } from '@/components/ui/PnLNumber'
 import { RiskMeter } from '@/components/ui/RiskMeter'
 import { DashboardSkeleton } from '@/components/ui/LoadingSkeleton'
@@ -67,6 +68,19 @@ function ProgressBar({ value, max = 100, color = '#6C63FF', label }: {
 export function DashboardPage() {
   const navigate = useNavigate()
   const activeChallengeId = useAppStore((s) => s.activeChallengeId)
+  const setActiveChallenge = useAppStore((s) => s.setActiveChallenge)
+
+  // Auto-set active challenge on mount if not already set
+  useEffect(() => {
+    if (!activeChallengeId) {
+      challengesApi.my().then((challenges) => {
+        const active = challenges.find((c) =>
+          ['phase1', 'phase2', 'funded'].includes(c.status)
+        )
+        if (active) setActiveChallenge(active)
+      }).catch(() => {})
+    }
+  }, [])
 
   const { data: dashboard, isLoading } = useQuery({
     queryKey: ['dashboard', activeChallengeId],

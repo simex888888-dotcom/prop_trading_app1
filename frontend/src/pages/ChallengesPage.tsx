@@ -34,11 +34,15 @@ export function ChallengesPage() {
 
   const purchaseMutation = useMutation({
     mutationFn: (id: number) => challengesApi.purchase(id),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['my-challenges'] })
       setPurchaseError('')
       setShowConfirm(false)
       setShowSuccess(true)
+      // Auto-set active challenge if status is active
+      if (result && ['phase1', 'phase2', 'funded'].includes(result.status)) {
+        setActiveChallenge(result)
+      }
     },
     onError: (err: any) => {
       const msg =
