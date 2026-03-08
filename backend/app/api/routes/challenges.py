@@ -341,6 +341,7 @@ class CredentialsOut(BaseModel):
     exchange: str
     base_url: str
     demo_url: str
+    mode: str = "paper"  # "paper" | "bybit"
 
 
 @router.get("/{challenge_id}/credentials", response_model=APIResponse[CredentialsOut])
@@ -350,16 +351,31 @@ async def get_challenge_credentials(
     session: AsyncSession = Depends(get_db),
 ) -> APIResponse[CredentialsOut]:
     """
-    Возвращает API ключи Bybit Demo суб-аккаунта трейдера.
-    Используется для самостоятельной торговли на demo.bybit.com.
+    Возвращает информацию о торговом аккаунте для испытания.
+    Если challenge активирован через paper trading — возвращает mode="paper".
+    Если есть Bybit суб-аккаунт — возвращает ключи и mode="bybit".
     """
     challenge = await _get_user_challenge(challenge_id, user.id, session)
 
-    if not challenge.demo_api_key_enc or not challenge.demo_api_secret_enc:
+    if challenge.status not in (
+        ChallengeStatus.phase1, ChallengeStatus.phase2, ChallengeStatus.funded
+    ):
         raise HTTPException(
             status_code=404,
             detail="Учётные данные ещё не созданы. Нажмите 'Активировать аккаунт'.",
         )
+
+    # Paper trading mode (нет Bybit суб-аккаунта)
+    if not challenge.demo_api_key_enc or challenge.demo_account_id == "paper":
+        return APIResponse(data=CredentialsOut(
+            api_key="",
+            api_secret="",
+            sub_uid="",
+            exchange="Paper Trading",
+            base_url="",
+            demo_url="",
+            mode="paper",
+        ))
 
     return APIResponse(data=CredentialsOut(
         api_key=decrypt_aes256(challenge.demo_api_key_enc),
@@ -368,6 +384,7 @@ async def get_challenge_credentials(
         exchange="Bybit Demo",
         base_url="https://api-demo.bybit.com",
         demo_url="https://testnet.bybit.com",
+        mode="bybit",
     ))
 
 
@@ -378,54 +395,32 @@ async def activate_challenge_self(
     session: AsyncSession = Depends(get_db),
 ) -> APIResponse[UserChallengeOut]:
     """
-    Пользователь сам создаёт Bybit demo аккаунт для своего испытания.
-    Доступно для статусов pending_payment и phase1 (если ключи не созданы).
+    Активирует испытание в режиме Paper Trading (симуляция с реальными ценами Bybit).
+    Bybit Demo API не поддерживает создание суб-аккаунтов (ограничение платформы),
+    поэтому торговля ведётся через встроенный терминал приложения.
     """
     challenge = await _get_user_challenge(challenge_id, user.id, session)
 
-    # Если уже есть ключи — вернём текущий статус
-    if challenge.demo_api_key_enc and challenge.status in (
+    # Уже активирован
+    if challenge.status in (
         ChallengeStatus.phase1, ChallengeStatus.phase2, ChallengeStatus.funded
     ):
         return APIResponse(data=UserChallengeOut.model_validate(challenge))
 
-    from app.services.exchange.bybit_master import BybitMasterClient
-    from app.core.security import encrypt_aes256 as enc
-
-    try:
-        master = BybitMasterClient(mode="demo")
-    except ValueError as cfg_err:
-        logger.error(f"Bybit Demo keys not configured: {cfg_err}")
-        raise HTTPException(status_code=503, detail=str(cfg_err))
-
-    try:
-        demo_account = await master.setup_demo_challenge_account(
-            account_size=challenge.initial_balance,
-            username_prefix=f"CHM{user.telegram_id}",
-        )
-    except Exception as e:
-        logger.error(f"Self-activation failed for challenge {challenge_id}: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail=f"Bybit временно недоступен. Попробуйте через минуту. ({str(e)[:80]})",
-        )
-    finally:
-        await master.close()
-
     now = datetime.now(timezone.utc)
-    challenge.demo_account_id = demo_account["account_id"]
-    challenge.demo_api_key_enc = enc(demo_account["api_key"])
-    challenge.demo_api_secret_enc = enc(demo_account["api_secret"])
+    # Активируем в paper-trading режиме: Bybit API не нужен
     challenge.status = ChallengeStatus.phase1
     challenge.started_at = now
     challenge.daily_reset_at = now
+    # Маркер paper trading — нет Bybit суб-аккаунта
+    challenge.demo_account_id = "paper"
 
     if user.role == UserRole.guest:
         user.role = UserRole.challenger
 
     await session.commit()
 
-    logger.info(f"Challenge {challenge_id} self-activated by user {user.id}")
+    logger.info(f"Challenge {challenge_id} activated (paper trading) by user {user.id}")
     return APIResponse(data=UserChallengeOut.model_validate(challenge))
 
 

@@ -124,7 +124,7 @@ export function DashboardPage() {
       setBybitCreds(creds)
       setCredsError(false)
     } catch (e: any) {
-      setActivateError(e?.response?.data?.detail ?? 'Bybit временно недоступен. Попробуйте через минуту.')
+      setActivateError(e?.response?.data?.detail ?? 'Не удалось активировать. Попробуйте ещё раз.')
     } finally {
       setActivating(false)
     }
@@ -296,20 +296,20 @@ export function DashboardPage() {
         <QuickAction icon="📋" label="Правила" onClick={() => navigate('/rules')} color="#888" />
       </motion.div>
 
-      {/* Bybit credentials modal */}
+      {/* Trading modal */}
       <BottomSheet
         isOpen={showBybitModal}
         onClose={() => setShowBybitModal(false)}
-        title="Торговля на Bybit Demo"
-        height="auto"
+        title="Торговля в испытании"
+        height="70vh"
       >
         <div className="px-5 pb-6 space-y-4">
           {credsLoading ? (
             <div className="flex items-center justify-center py-8 gap-3">
               <div className="w-5 h-5 rounded-full border-2 border-brand-primary border-t-transparent animate-spin" />
-              <span className="text-text-secondary text-sm">Загрузка ключей...</span>
+              <span className="text-text-secondary text-sm">Загрузка...</span>
             </div>
-          ) : bybitCreds ? (
+          ) : bybitCreds?.mode === 'bybit' ? (
             <>
               {([
                 { label: 'API Key', value: bybitCreds.api_key, key: 'key' },
@@ -335,40 +335,56 @@ export function DashboardPage() {
                   </div>
                 </div>
               ))}
-
               <div className="rounded-xl p-3 text-xs text-text-secondary space-y-1"
                 style={{ background: 'rgba(255,165,2,0.07)', border: '1px solid rgba(255,165,2,0.2)' }}>
                 <p className="font-semibold text-[#FFA502]">Как подключить Bybit:</p>
                 <p>1. Перейди на <span className="text-profit font-medium">testnet.bybit.com</span></p>
                 <p>2. Войди в аккаунт → API Management</p>
                 <p>3. Создай подключение с API Key + Secret</p>
-                <p>4. Сделки автоматически учитываются в испытании</p>
               </div>
             </>
+          ) : bybitCreds?.mode === 'paper' ? (
+            <div className="space-y-4 py-2">
+              <div className="text-center space-y-3">
+                <div className="text-5xl">📊</div>
+                <p className="text-white font-bold text-lg">Paper Trading</p>
+                <p className="text-text-secondary text-sm leading-relaxed">
+                  Твоё испытание проходит во встроенном симуляторе с реальными ценами Bybit.
+                  Торгуй через терминал приложения.
+                </p>
+              </div>
+              <div className="rounded-xl p-3 text-xs text-text-secondary space-y-1.5"
+                style={{ background: 'rgba(108,99,255,0.08)', border: '1px solid rgba(108,99,255,0.2)' }}>
+                <p className="font-semibold text-[#6C63FF]">Как торговать:</p>
+                <p>1. Открой терминал в приложении</p>
+                <p>2. Выбери инструмент и направление</p>
+                <p>3. Результаты учитываются в испытании</p>
+              </div>
+            </div>
           ) : credsError ? (
             <div className="space-y-4 py-2">
               <div className="text-center space-y-2">
-                <div className="text-4xl">🔗</div>
-                <p className="text-white font-semibold">Bybit Demo аккаунт не активирован</p>
+                <div className="text-4xl">⚡</div>
+                <p className="text-white font-semibold">Аккаунт не активирован</p>
                 <p className="text-text-secondary text-sm">
-                  Нажмите кнопку — система создаст торговый суб-аккаунт и пополнит баланс
+                  Нажмите кнопку — испытание будет активировано в режиме Paper Trading
                 </p>
               </div>
 
               <motion.button
                 whileTap={{ scale: 0.97 }}
                 className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2"
-                style={{ background: 'linear-gradient(135deg, #FFA502, #FF6B35)' }}
+                style={{ background: 'linear-gradient(135deg, #6C63FF, #5A52E0)' }}
                 disabled={activating}
                 onClick={selfActivate}
               >
                 {activating ? (
                   <>
                     <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                    <span>Создаём аккаунт...</span>
+                    <span>Активируем...</span>
                   </>
                 ) : (
-                  <><span>⚡</span><span>Активировать Bybit аккаунт</span></>
+                  <><span>⚡</span><span>Активировать испытание</span></>
                 )}
               </motion.button>
 
@@ -384,9 +400,9 @@ export function DashboardPage() {
             whileTap={{ scale: 0.97 }}
             className="w-full py-3.5 rounded-2xl font-bold text-white"
             style={{ background: 'linear-gradient(135deg, #6C63FF, #5A52E0)' }}
-            onClick={() => navigate('/terminal')}
+            onClick={() => { setShowBybitModal(false); navigate('/terminal') }}
           >
-            ⚡ Открыть терминал в приложении
+            ⚡ Открыть терминал
           </motion.button>
         </div>
       </BottomSheet>

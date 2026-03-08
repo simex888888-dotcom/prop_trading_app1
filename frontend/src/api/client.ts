@@ -248,6 +248,7 @@ export interface BybitCredentials {
   exchange: string
   base_url: string
   demo_url: string
+  mode: 'paper' | 'bybit'
 }
 
 export interface ChallengeRules {
