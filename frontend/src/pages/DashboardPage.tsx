@@ -72,6 +72,9 @@ export function DashboardPage() {
   const [showBybitModal, setShowBybitModal] = useState(false)
   const [bybitCreds, setBybitCreds] = useState<BybitCredentials | null>(null)
   const [credsLoading, setCredsLoading] = useState(false)
+  const [credsError, setCredsError] = useState(false)
+  const [activating, setActivating] = useState(false)
+  const [activateError, setActivateError] = useState('')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
 
   // Auto-set active challenge on mount if not already set
@@ -97,14 +100,32 @@ export function DashboardPage() {
     if (!activeChallengeId) return
     setShowBybitModal(true)
     if (bybitCreds) return
+    setCredsError(false)
     setCredsLoading(true)
     try {
       const creds = await challengesApi.getCredentials(activeChallengeId)
       setBybitCreds(creds)
     } catch {
-      // Will show error state in modal
+      setCredsError(true)
     } finally {
       setCredsLoading(false)
+    }
+  }
+
+  const selfActivate = async () => {
+    if (!activeChallengeId) return
+    setActivating(true)
+    setActivateError('')
+    try {
+      await challengesApi.activateSelf(activeChallengeId)
+      // Now fetch credentials
+      const creds = await challengesApi.getCredentials(activeChallengeId)
+      setBybitCreds(creds)
+      setCredsError(false)
+    } catch (e: any) {
+      setActivateError(e?.response?.data?.detail ?? 'Bybit временно недоступен. Попробуйте через минуту.')
+    } finally {
+      setActivating(false)
     }
   }
 
@@ -344,10 +365,38 @@ export function DashboardPage() {
                     <p>4. Сделки автоматически учитываются в испытании</p>
                   </div>
                 </>
-              ) : (
-                <div className="text-center py-6 space-y-3">
-                  <p className="text-text-secondary text-sm">API ключи не созданы</p>
-                  <p className="text-text-muted text-xs">Аккаунт Bybit ещё не активирован</p>
+              ) : credsError ? (
+                <div className="space-y-4 py-2">
+                  <div className="text-center space-y-2">
+                    <div className="text-4xl">🔗</div>
+                    <p className="text-white font-semibold">Bybit Demo аккаунт не активирован</p>
+                    <p className="text-text-secondary text-sm">
+                      Нажмите кнопку — система создаст торговый суб-аккаунт и пополнит баланс
+                    </p>
+                  </div>
+
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2"
+                    style={{ background: 'linear-gradient(135deg, #FFA502, #FF6B35)' }}
+                    disabled={activating}
+                    onClick={selfActivate}
+                  >
+                    {activating ? (
+                      <>
+                        <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                        <span>Создаём аккаунт...</span>
+                      </>
+                    ) : (
+                      <><span>⚡</span><span>Активировать Bybit аккаунт</span></>
+                    )}
+                  </motion.button>
+
+                  {activateError && (
+                    <p className="text-xs text-center px-2" style={{ color: '#FF4757' }}>
+                      {activateError}
+                    </p>
+                  )}
                 </div>
               )}
 
