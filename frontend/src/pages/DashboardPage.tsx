@@ -3,7 +3,7 @@
  */
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { statsApi, tradingApi, challengesApi, type BybitCredentials } from '@/api/client'
 import { PnLNumber } from '@/components/ui/PnLNumber'
@@ -12,6 +12,7 @@ import { DashboardSkeleton } from '@/components/ui/LoadingSkeleton'
 import { EquitySparkline } from '@/components/charts/EquitySparkline'
 import { AnimatedRank, getRankByStats } from '@/components/animated/AnimatedRank'
 import { useAppStore } from '@/store/appStore'
+import { BottomSheet } from '@/components/ui/BottomSheet'
 
 function ModeBadge({ mode, hasChallengeActive }: { mode?: string; hasChallengeActive?: boolean }) {
   const isFunded = mode === 'funded'
@@ -296,122 +297,99 @@ export function DashboardPage() {
       </motion.div>
 
       {/* Bybit credentials modal */}
-      <AnimatePresence>
-        {showBybitModal && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-end"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <div
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setShowBybitModal(false)}
-            />
-            <motion.div
-              className="relative w-full rounded-t-3xl p-5 space-y-4"
-              style={{ background: '#0F0F1A', border: '1px solid rgba(255,255,255,0.07)' }}
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', stiffness: 380, damping: 38 }}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="text-base font-bold text-white">Торговля на Bybit Demo</h3>
-                <button
-                  className="text-text-muted text-2xl leading-none"
-                  onClick={() => setShowBybitModal(false)}
-                >×</button>
+      <BottomSheet
+        isOpen={showBybitModal}
+        onClose={() => setShowBybitModal(false)}
+        title="Торговля на Bybit Demo"
+        height="auto"
+      >
+        <div className="px-5 pb-6 space-y-4">
+          {credsLoading ? (
+            <div className="flex items-center justify-center py-8 gap-3">
+              <div className="w-5 h-5 rounded-full border-2 border-brand-primary border-t-transparent animate-spin" />
+              <span className="text-text-secondary text-sm">Загрузка ключей...</span>
+            </div>
+          ) : bybitCreds ? (
+            <>
+              {([
+                { label: 'API Key', value: bybitCreds.api_key, key: 'key' },
+                { label: 'API Secret', value: bybitCreds.api_secret, key: 'secret' },
+                { label: 'Sub UID', value: bybitCreds.sub_uid, key: 'uid' },
+              ] as const).map(({ label, value, key }) => (
+                <div key={key} className="space-y-1">
+                  <p className="text-xs text-text-muted">{label}</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs text-white bg-bg-border rounded-xl px-3 py-2.5 truncate">
+                      {value}
+                    </code>
+                    <button
+                      className="shrink-0 px-3 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                      style={{
+                        background: copiedKey === key ? 'rgba(0,212,170,0.2)' : 'rgba(108,99,255,0.2)',
+                        color: copiedKey === key ? '#00D4AA' : '#6C63FF',
+                      }}
+                      onClick={() => copyToClipboard(value, key)}
+                    >
+                      {copiedKey === key ? '✓' : 'Копировать'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              <div className="rounded-xl p-3 text-xs text-text-secondary space-y-1"
+                style={{ background: 'rgba(255,165,2,0.07)', border: '1px solid rgba(255,165,2,0.2)' }}>
+                <p className="font-semibold text-[#FFA502]">Как подключить Bybit:</p>
+                <p>1. Перейди на <span className="text-profit font-medium">testnet.bybit.com</span></p>
+                <p>2. Войди в аккаунт → API Management</p>
+                <p>3. Создай подключение с API Key + Secret</p>
+                <p>4. Сделки автоматически учитываются в испытании</p>
               </div>
-
-              {credsLoading ? (
-                <div className="flex items-center justify-center py-8 gap-3">
-                  <div className="w-5 h-5 rounded-full border-2 border-brand-primary border-t-transparent animate-spin" />
-                  <span className="text-text-secondary text-sm">Загрузка ключей...</span>
-                </div>
-              ) : bybitCreds ? (
-                <>
-                  {([
-                    { label: 'API Key', value: bybitCreds.api_key, key: 'key' },
-                    { label: 'API Secret', value: bybitCreds.api_secret, key: 'secret' },
-                    { label: 'Sub UID', value: bybitCreds.sub_uid, key: 'uid' },
-                  ] as const).map(({ label, value, key }) => (
-                    <div key={key} className="space-y-1">
-                      <p className="text-xs text-text-muted">{label}</p>
-                      <div className="flex items-center gap-2">
-                        <code className="flex-1 text-xs text-white bg-bg-border rounded-xl px-3 py-2.5 truncate">
-                          {value}
-                        </code>
-                        <button
-                          className="shrink-0 px-3 py-2.5 rounded-xl text-xs font-bold transition-colors"
-                          style={{
-                            background: copiedKey === key ? 'rgba(0,212,170,0.2)' : 'rgba(108,99,255,0.2)',
-                            color: copiedKey === key ? '#00D4AA' : '#6C63FF',
-                          }}
-                          onClick={() => copyToClipboard(value, key)}
-                        >
-                          {copiedKey === key ? '✓' : 'Копировать'}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-
-                  <div className="rounded-xl p-3 text-xs text-text-secondary space-y-1"
-                    style={{ background: 'rgba(255,165,2,0.07)', border: '1px solid rgba(255,165,2,0.2)' }}>
-                    <p className="font-semibold text-[#FFA502]">Как подключить Bybit:</p>
-                    <p>1. Перейди на <span className="text-profit font-medium">testnet.bybit.com</span></p>
-                    <p>2. Войди в аккаунт → API Management</p>
-                    <p>3. Создай подключение с API Key + Secret</p>
-                    <p>4. Сделки автоматически учитываются в испытании</p>
-                  </div>
-                </>
-              ) : credsError ? (
-                <div className="space-y-4 py-2">
-                  <div className="text-center space-y-2">
-                    <div className="text-4xl">🔗</div>
-                    <p className="text-white font-semibold">Bybit Demo аккаунт не активирован</p>
-                    <p className="text-text-secondary text-sm">
-                      Нажмите кнопку — система создаст торговый суб-аккаунт и пополнит баланс
-                    </p>
-                  </div>
-
-                  <motion.button
-                    whileTap={{ scale: 0.97 }}
-                    className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2"
-                    style={{ background: 'linear-gradient(135deg, #FFA502, #FF6B35)' }}
-                    disabled={activating}
-                    onClick={selfActivate}
-                  >
-                    {activating ? (
-                      <>
-                        <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                        <span>Создаём аккаунт...</span>
-                      </>
-                    ) : (
-                      <><span>⚡</span><span>Активировать Bybit аккаунт</span></>
-                    )}
-                  </motion.button>
-
-                  {activateError && (
-                    <p className="text-xs text-center px-2" style={{ color: '#FF4757' }}>
-                      {activateError}
-                    </p>
-                  )}
-                </div>
-              ) : null}
+            </>
+          ) : credsError ? (
+            <div className="space-y-4 py-2">
+              <div className="text-center space-y-2">
+                <div className="text-4xl">🔗</div>
+                <p className="text-white font-semibold">Bybit Demo аккаунт не активирован</p>
+                <p className="text-text-secondary text-sm">
+                  Нажмите кнопку — система создаст торговый суб-аккаунт и пополнит баланс
+                </p>
+              </div>
 
               <motion.button
                 whileTap={{ scale: 0.97 }}
-                className="w-full py-3.5 rounded-2xl font-bold text-white"
-                style={{ background: 'linear-gradient(135deg, #6C63FF, #5A52E0)' }}
-                onClick={() => navigate('/terminal')}
+                className="w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2"
+                style={{ background: 'linear-gradient(135deg, #FFA502, #FF6B35)' }}
+                disabled={activating}
+                onClick={selfActivate}
               >
-                ⚡ Открыть терминал в приложении
+                {activating ? (
+                  <>
+                    <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                    <span>Создаём аккаунт...</span>
+                  </>
+                ) : (
+                  <><span>⚡</span><span>Активировать Bybit аккаунт</span></>
+                )}
               </motion.button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
+              {activateError && (
+                <p className="text-xs text-center px-2" style={{ color: '#FF4757' }}>
+                  {activateError}
+                </p>
+              )}
+            </div>
+          ) : null}
+
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            className="w-full py-3.5 rounded-2xl font-bold text-white"
+            style={{ background: 'linear-gradient(135deg, #6C63FF, #5A52E0)' }}
+            onClick={() => navigate('/terminal')}
+          >
+            ⚡ Открыть терминал в приложении
+          </motion.button>
+        </div>
+      </BottomSheet>
 
       {/* No active challenge */}
       {!d?.active_challenge_id && (

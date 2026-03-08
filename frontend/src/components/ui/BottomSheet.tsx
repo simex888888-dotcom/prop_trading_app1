@@ -10,7 +10,7 @@ interface BottomSheetProps {
   onClose: () => void
   children: ReactNode
   title?: string
-  /** CSS height, e.g. '85vh' or '560px'. Default '85vh'. */
+  /** CSS height, e.g. '85vh', '560px', or 'auto'. Default '85vh'. */
   height?: string
 }
 
@@ -55,8 +55,7 @@ export function BottomSheet({
             className="fixed bottom-0 left-0 right-0 z-50 flex flex-col rounded-t-3xl"
             style={{
               background: '#13131F',
-              height,
-              maxHeight: '94vh',
+              ...(height === 'auto' ? { maxHeight: '94vh' } : { height, maxHeight: '94vh' }),
               boxShadow: '0 -8px 48px rgba(0,0,0,0.6)',
             }}
             initial={{ y: '100%' }}
