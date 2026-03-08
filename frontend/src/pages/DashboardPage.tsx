@@ -398,7 +398,7 @@ export function DashboardPage() {
                     </p>
                   )}
                 </div>
-              )}
+              ) : null}
 
               <motion.button
                 whileTap={{ scale: 0.97 }}
