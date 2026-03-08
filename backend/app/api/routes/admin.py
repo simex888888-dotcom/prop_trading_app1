@@ -641,6 +641,43 @@ class AddPnlRequest(BaseModel):
     add_day: bool = True
 
 
+# ─── Удаление испытания (super_admin) ─────────────────────────────────────────
+
+@router.delete("/challenges/{challenge_id}", response_model=APIResponse[dict])
+async def delete_challenge(
+    challenge_id: int,
+    admin: User = Depends(require_super_admin()),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[dict]:
+    """
+    Полное удаление испытания (super_admin only).
+    Каскадно удаляет связанные trade/violation/payout записи.
+    """
+    from app.models.trade import Trade
+    from app.models.violation import Violation
+    from sqlalchemy import delete as sa_delete
+
+    ch = await session.get(UserChallenge, challenge_id)
+    if not ch:
+        raise HTTPException(status_code=404, detail="Испытание не найдено")
+
+    # Каскадно удаляем зависимые записи
+    await session.execute(sa_delete(Trade).where(Trade.challenge_id == challenge_id))
+    await session.execute(sa_delete(Violation).where(Violation.challenge_id == challenge_id))
+
+    # Удаляем связанные выплаты (только pending — approved нельзя отменить)
+    await session.execute(
+        sa_delete(Payout).where(
+            Payout.challenge_id == challenge_id,
+            Payout.status.in_(["pending", "rejected"]),
+        )
+    )
+
+    await session.delete(ch)
+    await session.commit()
+    return APIResponse(data={"challenge_id": challenge_id, "deleted": True})
+
+
 # ─── Bootstrap (без авторизации) ─────────────────────────────────────────────
 
 @router.post("/bootstrap", response_model=APIResponse[dict])

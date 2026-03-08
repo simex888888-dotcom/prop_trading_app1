@@ -4,7 +4,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { statsApi } from '@/api/client'
+import { statsApi, tradingApi } from '@/api/client'
 import { PnLNumber } from '@/components/ui/PnLNumber'
 import { RiskMeter } from '@/components/ui/RiskMeter'
 import { DashboardSkeleton } from '@/components/ui/LoadingSkeleton'
@@ -74,6 +74,14 @@ export function DashboardPage() {
     refetchInterval: 10_000,
   })
 
+  // Живой баланс напрямую с Bybit (обновляется чаще, не из БД)
+  const { data: liveBalance } = useQuery({
+    queryKey: ['live-balance', activeChallengeId],
+    queryFn: () => tradingApi.getBalance(activeChallengeId!),
+    enabled: !!activeChallengeId,
+    refetchInterval: 8_000,
+  })
+
   const { data: equityCurve = [] } = useQuery({
     queryKey: ['equity-curve', activeChallengeId],
     queryFn: () => statsApi.getEquityCurve(activeChallengeId!),
@@ -83,6 +91,9 @@ export function DashboardPage() {
   if (isLoading) return <DashboardSkeleton />
 
   const d = dashboard
+  // Показываем живой equity из Bybit если доступен, иначе из БД
+  const displayEquity = liveBalance?.equity ?? d?.equity ?? 0
+  const displayUnrealizedPnl = liveBalance?.unrealized_pnl ?? 0
   const rank = getRankByStats(
     d?.account_mode === 'funded' ? 1 : 0,
     d?.total_pnl ?? 0
@@ -116,22 +127,36 @@ export function DashboardPage() {
         </div>
       </motion.div>
 
-      {/* Main account card */}
-      <motion.div variants={item} className="glass-card p-5 space-y-4">
+      {/* Main account card — выделенный баланс */}
+      <motion.div variants={item} className="glass-card p-5 space-y-4"
+        style={{ border: '1px solid rgba(108,99,255,0.25)', boxShadow: '0 4px 24px rgba(108,99,255,0.1)' }}>
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-text-secondary text-xs mb-1">Equity</p>
-            <PnLNumber
-              value={d?.equity ?? 0}
-              showSign={false}
-              size="xl"
-              prefix="$"
-            />
+            <p className="text-text-secondary text-xs mb-1 uppercase tracking-wide">
+              Equity {liveBalance ? '● Live' : ''}
+            </p>
+            {/* Большой яркий баланс */}
+            <div className="flex items-baseline gap-2">
+              <span className="num text-4xl font-black text-white">
+                ${displayEquity.toLocaleString('en', { maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            {/* Нереализованный PnL */}
+            {displayUnrealizedPnl !== 0 && (
+              <div className={`flex items-center gap-1 mt-1 ${displayUnrealizedPnl >= 0 ? 'text-profit' : 'text-loss'}`}>
+                <span className="text-sm">{displayUnrealizedPnl >= 0 ? '▲' : '▼'}</span>
+                <span className="num text-sm font-semibold">
+                  {displayUnrealizedPnl >= 0 ? '+' : ''}{displayUnrealizedPnl.toFixed(2)} unrealized
+                </span>
+              </div>
+            )}
           </div>
           {d?.active_challenge_id && (
             <div className="text-right">
               <p className="text-text-secondary text-xs mb-1">Дн. PnL</p>
               <PnLNumber value={d?.daily_pnl ?? 0} size="lg" />
+              <p className="text-text-secondary text-xs mt-2 mb-0.5">Total PnL</p>
+              <PnLNumber value={d?.total_pnl ?? 0} size="sm" />
             </div>
           )}
         </div>

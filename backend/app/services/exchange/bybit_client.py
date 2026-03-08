@@ -309,6 +309,53 @@ class BybitClient:
         data = await self._get("/v5/market/instruments-info", params)
         return data["result"].get("list", [])
 
+    # ─── Изменение TP/SL существующей позиции ─────────────────────────────────
+
+    async def set_trading_stop(
+        self,
+        symbol: str,
+        take_profit: Optional[str] = None,
+        stop_loss: Optional[str] = None,
+        position_idx: int = 0,
+    ) -> dict[str, Any]:
+        """
+        Устанавливает/изменяет Take Profit и Stop Loss для открытой позиции.
+        Чтобы снять TP/SL — передай "0".
+        """
+        body: dict[str, Any] = {
+            "category": "linear",
+            "symbol": symbol,
+            "positionIdx": position_idx,
+        }
+        if take_profit is not None:
+            body["takeProfit"] = take_profit
+        if stop_loss is not None:
+            body["stopLoss"] = stop_loss
+        data = await self._post("/v5/position/trading-stop", body)
+        logger.info(f"Trading stop set: {symbol} TP={take_profit} SL={stop_loss}")
+        return data.get("result", {})
+
+    async def close_position_partial(
+        self,
+        symbol: str,
+        side: str,
+        qty: str,
+        position_idx: int = 0,
+    ) -> dict[str, Any]:
+        """
+        Частичное закрытие позиции по рыночной цене.
+        side: сторона ТЕКУЩЕЙ позиции ('Buy' или 'Sell') — закрывающий ордер инвертируется.
+        """
+        close_side: Literal["Buy", "Sell"] = "Sell" if side == "Buy" else "Buy"
+        return await self.place_order(
+            symbol=symbol,
+            side=close_side,
+            order_type="Market",
+            qty=qty,
+            reduce_only=True,
+            position_idx=position_idx,
+        )
+
     # ─── Настройка плеча ──────────────────────────────────────────────────────
 
     async def set_leverage(self, symbol: str, leverage: int) -> dict[str, Any]:
