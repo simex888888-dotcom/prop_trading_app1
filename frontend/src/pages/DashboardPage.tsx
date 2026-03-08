@@ -1,11 +1,11 @@
 /**
  * DashboardPage — главный дашборд CHM_KRYPTON.
  */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { statsApi, tradingApi, challengesApi } from '@/api/client'
+import { statsApi, tradingApi, challengesApi, type BybitCredentials } from '@/api/client'
 import { PnLNumber } from '@/components/ui/PnLNumber'
 import { RiskMeter } from '@/components/ui/RiskMeter'
 import { DashboardSkeleton } from '@/components/ui/LoadingSkeleton'
@@ -69,6 +69,10 @@ export function DashboardPage() {
   const navigate = useNavigate()
   const activeChallengeId = useAppStore((s) => s.activeChallengeId)
   const setActiveChallenge = useAppStore((s) => s.setActiveChallenge)
+  const [showBybitModal, setShowBybitModal] = useState(false)
+  const [bybitCreds, setBybitCreds] = useState<BybitCredentials | null>(null)
+  const [credsLoading, setCredsLoading] = useState(false)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
 
   // Auto-set active challenge on mount if not already set
   useEffect(() => {
@@ -81,6 +85,28 @@ export function DashboardPage() {
       }).catch(() => {})
     }
   }, [])
+
+  const copyToClipboard = (value: string, key: string) => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopiedKey(key)
+      setTimeout(() => setCopiedKey(null), 2000)
+    })
+  }
+
+  const openBybitCreds = async () => {
+    if (!activeChallengeId) return
+    setShowBybitModal(true)
+    if (bybitCreds) return
+    setCredsLoading(true)
+    try {
+      const creds = await challengesApi.getCredentials(activeChallengeId)
+      setBybitCreds(creds)
+    } catch {
+      // Will show error state in modal
+    } finally {
+      setCredsLoading(false)
+    }
+  }
 
   const { data: dashboard, isLoading } = useQuery({
     queryKey: ['dashboard', activeChallengeId],
@@ -242,11 +268,101 @@ export function DashboardPage() {
 
       {/* Quick actions */}
       <motion.div variants={item} className="grid grid-cols-2 gap-3">
-        <QuickAction icon="⚡" label="Торговать" onClick={() => navigate('/terminal')} color="#6C63FF" />
-        <QuickAction icon="📋" label="Правила" onClick={() => navigate('/rules')} color="#00D4AA" />
-        <QuickAction icon="💰" label="Выплаты" onClick={() => navigate('/payouts')} color="#FFA502" />
-        <QuickAction icon="🏆" label="Рейтинг" onClick={() => navigate('/profile')} color="#FFD700" />
+        <QuickAction icon="⚡" label="Терминал" onClick={() => navigate('/terminal')} color="#6C63FF" />
+        <QuickAction icon="🔗" label="Bybit Demo" onClick={openBybitCreds} color="#FFA502" />
+        <QuickAction icon="💰" label="Выплаты" onClick={() => navigate('/payouts')} color="#00D4AA" />
+        <QuickAction icon="📋" label="Правила" onClick={() => navigate('/rules')} color="#888" />
       </motion.div>
+
+      {/* Bybit credentials modal */}
+      <AnimatePresence>
+        {showBybitModal && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-end"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowBybitModal(false)}
+            />
+            <motion.div
+              className="relative w-full rounded-t-3xl p-5 space-y-4"
+              style={{ background: '#0F0F1A', border: '1px solid rgba(255,255,255,0.07)' }}
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-base font-bold text-white">Торговля на Bybit Demo</h3>
+                <button
+                  className="text-text-muted text-2xl leading-none"
+                  onClick={() => setShowBybitModal(false)}
+                >×</button>
+              </div>
+
+              {credsLoading ? (
+                <div className="flex items-center justify-center py-8 gap-3">
+                  <div className="w-5 h-5 rounded-full border-2 border-brand-primary border-t-transparent animate-spin" />
+                  <span className="text-text-secondary text-sm">Загрузка ключей...</span>
+                </div>
+              ) : bybitCreds ? (
+                <>
+                  {([
+                    { label: 'API Key', value: bybitCreds.api_key, key: 'key' },
+                    { label: 'API Secret', value: bybitCreds.api_secret, key: 'secret' },
+                    { label: 'Sub UID', value: bybitCreds.sub_uid, key: 'uid' },
+                  ] as const).map(({ label, value, key }) => (
+                    <div key={key} className="space-y-1">
+                      <p className="text-xs text-text-muted">{label}</p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 text-xs text-white bg-bg-border rounded-xl px-3 py-2.5 truncate">
+                          {value}
+                        </code>
+                        <button
+                          className="shrink-0 px-3 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                          style={{
+                            background: copiedKey === key ? 'rgba(0,212,170,0.2)' : 'rgba(108,99,255,0.2)',
+                            color: copiedKey === key ? '#00D4AA' : '#6C63FF',
+                          }}
+                          onClick={() => copyToClipboard(value, key)}
+                        >
+                          {copiedKey === key ? '✓' : 'Копировать'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="rounded-xl p-3 text-xs text-text-secondary space-y-1"
+                    style={{ background: 'rgba(255,165,2,0.07)', border: '1px solid rgba(255,165,2,0.2)' }}>
+                    <p className="font-semibold text-[#FFA502]">Как подключить Bybit:</p>
+                    <p>1. Перейди на <span className="text-profit font-medium">testnet.bybit.com</span></p>
+                    <p>2. Войди в аккаунт → API Management</p>
+                    <p>3. Создай подключение с API Key + Secret</p>
+                    <p>4. Сделки автоматически учитываются в испытании</p>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-6 space-y-3">
+                  <p className="text-text-secondary text-sm">API ключи не созданы</p>
+                  <p className="text-text-muted text-xs">Аккаунт Bybit ещё не активирован</p>
+                </div>
+              )}
+
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                className="w-full py-3.5 rounded-2xl font-bold text-white"
+                style={{ background: 'linear-gradient(135deg, #6C63FF, #5A52E0)' }}
+                onClick={() => navigate('/terminal')}
+              >
+                ⚡ Открыть терминал в приложении
+              </motion.button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* No active challenge */}
       {!d?.active_challenge_id && (

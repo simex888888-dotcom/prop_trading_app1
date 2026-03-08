@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import get_current_user, rate_limit_standard
 from app.core.database import get_db
-from app.core.security import encrypt_aes256
+from app.core.security import encrypt_aes256, decrypt_aes256
 from app.models.challenge import ChallengeStatus, ChallengeType, UserChallenge
 from app.models.user import User, UserRole
 from app.models.violation import Violation
@@ -330,6 +330,98 @@ async def get_challenge_violations(
     )
     violations = result.scalars().all()
     return APIResponse(data=[ViolationOut.model_validate(v) for v in violations])
+
+
+# ─── Учётные данные Bybit (для самостоятельной торговли) ──────────────────────
+
+class CredentialsOut(BaseModel):
+    api_key: str
+    api_secret: str
+    sub_uid: str
+    exchange: str
+    base_url: str
+    demo_url: str
+
+
+@router.get("/{challenge_id}/credentials", response_model=APIResponse[CredentialsOut])
+async def get_challenge_credentials(
+    challenge_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[CredentialsOut]:
+    """
+    Возвращает API ключи Bybit Demo суб-аккаунта трейдера.
+    Используется для самостоятельной торговли на demo.bybit.com.
+    """
+    challenge = await _get_user_challenge(challenge_id, user.id, session)
+
+    if not challenge.demo_api_key_enc or not challenge.demo_api_secret_enc:
+        raise HTTPException(
+            status_code=404,
+            detail="Учётные данные ещё не созданы. Нажмите 'Активировать аккаунт'.",
+        )
+
+    return APIResponse(data=CredentialsOut(
+        api_key=decrypt_aes256(challenge.demo_api_key_enc),
+        api_secret=decrypt_aes256(challenge.demo_api_secret_enc),
+        sub_uid=challenge.demo_account_id or "",
+        exchange="Bybit Demo",
+        base_url="https://api-demo.bybit.com",
+        demo_url="https://testnet.bybit.com",
+    ))
+
+
+@router.post("/{challenge_id}/activate-self", response_model=APIResponse[UserChallengeOut])
+async def activate_challenge_self(
+    challenge_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> APIResponse[UserChallengeOut]:
+    """
+    Пользователь сам создаёт Bybit demo аккаунт для своего испытания.
+    Доступно для статусов pending_payment и phase1 (если ключи не созданы).
+    """
+    challenge = await _get_user_challenge(challenge_id, user.id, session)
+
+    # Если уже есть ключи — вернём текущий статус
+    if challenge.demo_api_key_enc and challenge.status in (
+        ChallengeStatus.phase1, ChallengeStatus.phase2, ChallengeStatus.funded
+    ):
+        return APIResponse(data=UserChallengeOut.model_validate(challenge))
+
+    from app.services.exchange.bybit_master import BybitMasterClient
+    from app.core.security import encrypt_aes256 as enc
+
+    master = BybitMasterClient(mode="demo")
+    try:
+        demo_account = await master.setup_demo_challenge_account(
+            account_size=challenge.initial_balance,
+            username_prefix=f"CHM{user.telegram_id}",
+        )
+    except Exception as e:
+        logger.error(f"Self-activation failed for challenge {challenge_id}: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Bybit временно недоступен. Попробуйте через минуту. ({str(e)[:80]})",
+        )
+    finally:
+        await master.close()
+
+    now = datetime.now(timezone.utc)
+    challenge.demo_account_id = demo_account["account_id"]
+    challenge.demo_api_key_enc = enc(demo_account["api_key"])
+    challenge.demo_api_secret_enc = enc(demo_account["api_secret"])
+    challenge.status = ChallengeStatus.phase1
+    challenge.started_at = now
+    challenge.daily_reset_at = now
+
+    if user.role == UserRole.guest:
+        user.role = UserRole.challenger
+
+    await session.commit()
+
+    logger.info(f"Challenge {challenge_id} self-activated by user {user.id}")
+    return APIResponse(data=UserChallengeOut.model_validate(challenge))
 
 
 # ─── Вспомогательные функции ──────────────────────────────────────────────────
