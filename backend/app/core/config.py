@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     bybit_demo_master_api_secret: str = ""
     bybit_demo_base_url: str = "https://api-demo.bybit.com"
 
+    # Bybit — Testnet master (для challenge фазы через реальный Bybit API, testnet.bybit.com)
+    # Testnet поддерживает создание суб-аккаунтов (в отличие от Demo Trading)
+    bybit_testnet_master_api_key: str = ""
+    bybit_testnet_master_api_secret: str = ""
+    bybit_testnet_base_url: str = "https://api-testnet.bybit.com"
+    bybit_testnet_ui_url: str = "https://testnet.bybit.com"
+
     # JWT
     jwt_secret: str = "change-me-jwt-secret-256-bit"
     jwt_algorithm: str = "HS256"
